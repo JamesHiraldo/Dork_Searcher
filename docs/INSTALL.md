@@ -4,8 +4,60 @@ This guide is updated for the current menu and workflow.
 
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.8+ (if installing from source)
 - Internet access for external APIs (Google CSE, Wayback, DuckDuckGo, etc.)
+
+## Quick Start: Windows Executable (No Python Required)
+
+The easiest way for Windows users - **no Python installation needed!**
+
+### Download & Run
+
+1. **Download** `dork_searcher.exe` from the `dist/` folder
+2. **Double-click** to launch the application
+3. The interactive menu will appear in a command window
+
+### Setup Instructions for End Users
+
+**For Users Receiving the Executable:**
+
+1. **Download** the `dork_searcher.exe` file from your distributor
+2. **Create a folder** anywhere on your computer (e.g., `C:\Tools\dork_searcher\`)
+3. **Place `dork_searcher.exe`** in that folder
+4. **Double-click** the executable to run
+5. Select options from the interactive menu
+
+**Optional: Create a Desktop Shortcut**
+- Right-click `dork_searcher.exe`
+- Select "Create shortcut" or "Send to → Desktop (create shortcut)"
+- You can now launch from your desktop
+
+**Optional: Add to Windows Context Menu**
+- Right-click `dork_searcher.exe` → Properties → Advanced
+- Check "Run as administrator" if needed
+
+### Running from Command Line (Windows)
+
+```powershell
+# Navigate to the folder containing the exe
+cd "C:\Tools\dork_searcher"
+
+# Run the executable
+.\dork_searcher.exe
+
+# Or just double-click it
+```
+
+### Troubleshooting the Executable
+
+| Issue | Solution |
+|-------|----------|
+| "Windows protected your PC" warning | Click "More info" → "Run anyway" (this is normal for unsigned executables) |
+| API key not accepting input | Use copy-paste instead of typing directly |
+| No output displayed | Try running from Command Prompt instead of PowerShell |
+| "File not found" errors | Ensure the exe is in a permanent location, not Temp folder |
+
+---
 
 ## Recommended Install (Virtual Environment)
 

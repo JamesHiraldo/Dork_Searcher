@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 from setuptools import setup, find_packages
+from pathlib import Path
 
-with open("README.md", "r", encoding="utf-8") as fh:
+root_dir = Path(__file__).parent.parent
+with open(root_dir / "docs" / "README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
     name="dork-searcher",
     version="1.0.0",
-    author="Your Name",
-    description="API-based Dork Searcher with interactive CLI menu",
+    author="Maydayx2",
+    description="API-based Dork Searcher with interactive CLI menu for passive reconnaissance",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/dork-searcher",
-    packages=find_packages(),
-    py_modules=['searcher', 'cli'],
+    packages=find_packages(where="../src"),
+    package_dir={"": "../src"},
     entry_points={
         'console_scripts': [
             'dork_searcher=cli:main',
