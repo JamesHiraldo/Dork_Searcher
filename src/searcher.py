@@ -74,18 +74,56 @@ def search_google_cse(query: str, api_key: str, cse_id: str, num: int = 10) -> L
     return items
 
 
-def search_wayback(target: str) -> List[Dict[str, Any]]:
-    # Use CDX to fetch historical URLs
-    url = 'http://web.archive.org/cdx/search/cdx'
+def search_wayback(target: str, max_retries: int = 3) -> List[Dict[str, Any]]:
+    """Query Wayback Machine CDX API with retry logic
+    
+    Args:
+        target: Domain to search
+        max_retries: Number of retry attempts (default 3)
+    """
+    url = 'https://web.archive.org/cdx/search/cdx'
     params = {'url': f'{target}/*', 'output': 'json', 'fl': 'original', 'collapse': 'urlkey'}
-    r = requests.get(url, params=params, timeout=20)
-    r.raise_for_status()
-    j = r.json()
     results = []
-    # first row may be header
-    for row in j[1:]:
-        original = row[0]
-        results.append({'title': None, 'url': original, 'snippet': None})
+    
+    for attempt in range(max_retries):
+        try:
+            # Use HTTPS and longer timeout (60s for large archives)
+            print(f'  [*] Wayback Machine attempt {attempt + 1}/{max_retries}...')
+            r = requests.get(url, params=params, timeout=60, headers={'User-Agent': 'Mozilla/5.0'})
+            r.raise_for_status()
+            j = r.json()
+            
+            # first row may be header
+            for row in j[1:]:
+                original = row[0]
+                results.append({'title': None, 'url': original, 'snippet': None})
+            
+            print(f'  [+] Found {len(results)} results from Wayback Machine')
+            return results
+            
+        except requests.exceptions.Timeout:
+            print(f'  ! Timeout on attempt {attempt + 1}/{max_retries}. Retrying...')
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+            continue
+        except requests.exceptions.ConnectionError:
+            print(f'  ! Connection error on attempt {attempt + 1}/{max_retries}. Retrying...')
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            continue
+        except requests.exceptions.RequestException as e:
+            print(f'  ! Request error: {str(e)[:100]}')
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            continue
+        except (json.JSONDecodeError, IndexError, ValueError) as e:
+            print(f'  ! Failed to parse Wayback response: {str(e)[:100]}')
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            continue
+    
+    # All retries exhausted
+    print(f'  ! Wayback Machine unavailable after {max_retries} attempts')
     return results
 
 
@@ -248,10 +286,20 @@ def run_queries(queries: List[str], backend: str, api_key: str = None, cse_id: s
 
             for it in items:
                 results.append({'query': q, 'title': it.get('title'), 'url': it.get('url'), 'snippet': it.get('snippet')})
+            
+            if items:
+                print(f'  [+] {len(items)} results')
+                
+        except requests.exceptions.Timeout:
+            print(f'  ! Timeout - service is slow or unreachable. Skipping...', file=sys.stderr)
+        except requests.exceptions.ConnectionError:
+            print(f'  ! Connection error - check internet connection', file=sys.stderr)
         except Exception as e:
             err_msg = safe_error_message(e, [api_key])
             print(f'  ! Error for query: {err_msg}', file=sys.stderr)
+        
         time.sleep(rate_limit)
+    
     # Clear sensitive references once query execution is complete.
     api_key = None
     return results
