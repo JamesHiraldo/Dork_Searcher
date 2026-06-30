@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dork-searcher"
+version = "1.0.0"
+description = "API-based Dork Searcher with interactive CLI menu for passive reconnaissance"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Maydayx2", email = "your.email@example.com"}
+]
+keywords = ["dork", "searcher", "reconnaissance", "subdomain", "endpoint", "passive"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Information Technology",
+    "Topic :: Internet",
+    "Topic :: Security",
+]
+
+dependencies = [
+    "requests>=2.28.0",
+    "python-dateutil>=2.8.0",
+    "httpx>=0.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black>=23.0",
+    "flake8>=6.0",
+    "mypy>=1.0",
+]
+build = [
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+dork_searcher = "cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/dork-searcher"
+Documentation = "https://github.com/yourusername/dork-searcher/blob/main/README.md"
+Repository = "https://github.com/yourusername/dork-searcher.git"
+Issues = "https://github.com/yourusername/dork-searcher/issues"
+
+[tool.setuptools]
+packages = ["dork_searcher"]
+include-package-data = true
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
