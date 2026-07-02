@@ -5,7 +5,7 @@ Recon pipeline (Wayback)
 Example:
 
 ```powershell
-python "c:\Users\james\Desktop\New folder (3)\dork_searcher\recon_pipeline.py" --targets t-mobile.com account.t-mobile.com --output c:\temp\recon.json --csv c:\temp\recon.csv
+python -m src.recon_pipeline --targets t-mobile.com account.t-mobile.com --output c:\temp\recon.json --csv c:\temp\recon.csv
 ```
 
 Notes:

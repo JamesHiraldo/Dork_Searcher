@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Dork Searcher — API-based dork runner
 
-Supports backends: google (CSE), wayback (CDX), duckduckgo, c99subdomain
+Supports backends: google (CSE), wayback (CDX), duckduckgo, dogpile, dnsdumpster, c99subdomain
 
 Usage example:
 python searcher.py --backend wayback --targets t-mobile.com account.t-mobile.com --output out.json
@@ -10,6 +10,8 @@ python searcher.py --backend c99subdomain --targets t-mobile.com --output out.js
 """
 from __future__ import annotations
 import argparse
+import asyncio
+import html
 import re
 import json
 import time
@@ -82,7 +84,13 @@ def search_wayback(target: str, max_retries: int = 3) -> List[Dict[str, Any]]:
         max_retries: Number of retry attempts (default 3)
     """
     url = 'https://web.archive.org/cdx/search/cdx'
-    params = {'url': f'{target}/*', 'output': 'json', 'fl': 'original', 'collapse': 'urlkey'}
+    params = {
+        'url': f'{target}/*',
+        'output': 'txt',
+        'fl': 'original',
+        'collapse': 'urlkey',
+        'limit': '5000',
+    }
     results = []
     
     for attempt in range(max_retries):
@@ -91,11 +99,10 @@ def search_wayback(target: str, max_retries: int = 3) -> List[Dict[str, Any]]:
             print(f'  [*] Wayback Machine attempt {attempt + 1}/{max_retries}...')
             r = requests.get(url, params=params, timeout=60, headers={'User-Agent': 'Mozilla/5.0'})
             r.raise_for_status()
-            j = r.json()
-            
-            # first row may be header
-            for row in j[1:]:
-                original = row[0]
+            for line in r.text.splitlines():
+                original = line.strip()
+                if not original or original.lower() == 'original':
+                    continue
                 results.append({'title': None, 'url': original, 'snippet': None})
             
             print(f'  [+] Found {len(results)} results from Wayback Machine')
@@ -153,8 +160,188 @@ def search_duckduckgo(query: str, num: int = 10) -> List[Dict[str, Any]]:
         })
         if len(results) >= num:
             break
+
+    if not results:
+        print(f'  ! DuckDuckGo returned zero results for query: {query}')
     
     return results[:num]
+
+
+def search_brave_web(query: str, num: int = 10) -> List[Dict[str, Any]]:
+    """Render Brave Search in a headless browser and extract site-matching results."""
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        print('  ! Playwright is not installed; cannot use browser fallback')
+        return []
+
+    target_match = re.search(r'\bsite:([^\s]+)', query, re.IGNORECASE)
+    target_domain = target_match.group(1).lower().strip().rstrip('.') if target_match else ''
+
+    def is_allowed_host(host: str) -> bool:
+        if not target_domain:
+            return True
+        host = host.lower().strip().rstrip('.')
+        return host == target_domain or host.endswith('.' + target_domain)
+
+    async def _fetch_results() -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+        seen = set()
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page(user_agent='Mozilla/5.0')
+                search_url = 'https://search.brave.com/search?source=web&q=' + urllib.parse.quote(query)
+                await page.goto(search_url, wait_until='domcontentloaded', timeout=30000)
+                await page.wait_for_timeout(5000)
+
+                page_text = await page.locator('body').inner_text()
+                if 'captcha' in page_text.lower() or 'temporarily unavailable' in page_text.lower():
+                    return []
+
+                anchors = await page.locator('main a').evaluate_all(
+                    '(elements) => elements.map((anchor) => ({ href: anchor.href || "", text: (anchor.textContent || "").replace(/\\s+/g, " ").trim(), aria: anchor.getAttribute("aria-label") || "" }))'
+                )
+                for anchor in anchors:
+                    href = anchor.get('href', '').strip()
+                    if not href.startswith('http'):
+                        continue
+                    parsed = urllib.parse.urlparse(href)
+                    if not parsed.netloc:
+                        continue
+                    if 'brave.com' in parsed.netloc.lower():
+                        continue
+                    if not is_allowed_host(parsed.netloc):
+                        continue
+
+                    normalized_link = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, '', ''))
+                    if normalized_link in seen:
+                        continue
+                    seen.add(normalized_link)
+
+                    title = anchor.get('text') or anchor.get('aria') or parsed.netloc
+                    results.append({'title': title, 'url': href, 'snippet': ''})
+                    if len(results) >= num:
+                        break
+                return results
+            finally:
+                await browser.close()
+
+    try:
+        return asyncio.run(_fetch_results())
+    except Exception as e:
+        print(f'  ! Brave browser fallback failed: {str(e)[:100]}')
+        return []
+
+
+def search_dogpile(query: str, num: int = 10) -> List[Dict[str, Any]]:
+    """Search Dogpile and extract external result links from the HTML page."""
+    url = 'https://www.dogpile.com/search'
+    params = {'q': query}
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    r = requests.get(url, params=params, timeout=20, headers=headers)
+    r.raise_for_status()
+
+    results: List[Dict[str, Any]] = []
+    seen = set()
+    target_match = re.search(r'\bsite:([^\s]+)', query, re.IGNORECASE)
+    target_domain = target_match.group(1).lower().strip().rstrip('.') if target_match else ''
+    loading_shell = (
+        'Loading search results...' in r.text
+        or 'web-result-skeleton' in r.text
+        or 'serp-first-paint-skeleton' in r.text
+    )
+
+    def is_allowed_host(host: str) -> bool:
+        if not target_domain:
+            return True
+        host = host.lower().strip().rstrip('.')
+        return host == target_domain or host.endswith('.' + target_domain)
+
+    for match in re.finditer(r'<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>', r.text, re.IGNORECASE | re.DOTALL):
+        link = html.unescape(match.group(1)).strip()
+        anchor_text = re.sub(r'<[^>]+>', ' ', html.unescape(match.group(2)))
+        anchor_text = re.sub(r'\s+', ' ', anchor_text).strip()
+
+        parsed = urllib.parse.urlparse(link)
+        if not parsed.netloc or 'dogpile.com' in parsed.netloc.lower():
+            continue
+        if not is_allowed_host(parsed.netloc):
+            continue
+
+        normalized_link = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, '', ''))
+        if normalized_link in seen:
+            continue
+        seen.add(normalized_link)
+
+        title = anchor_text or parsed.netloc
+        results.append({'title': title, 'url': link, 'snippet': ''})
+        if len(results) >= num:
+            break
+
+    if results:
+        return results
+
+    if loading_shell:
+        print(f'  ! Dogpile only returned the loading shell for query: {query}')
+        print('  [*] Falling back to browser-rendered Brave results...')
+        fallback_results = search_brave_web(query, num=num)
+        if not fallback_results:
+            print('  [*] Falling back to DuckDuckGo results...')
+            fallback_results = search_duckduckgo(query, num=num)
+        if not fallback_results:
+            print(f'  ! Browser and DuckDuckGo fallbacks returned zero results for query: {query}')
+        return fallback_results
+
+    print(f'  ! Dogpile returned zero results for query: {query}')
+
+    return results
+
+
+def search_dnsdumpster(target: str, api_key: str) -> List[Dict[str, Any]]:
+    """Query DNSDumpster API for DNS records related to a target domain."""
+    endpoint = f'https://api.dnsdumpster.com/domain/{target}'
+    headers = {
+        'X-API-Key': api_key,
+        'User-Agent': 'Mozilla/5.0',
+    }
+    r = requests.get(endpoint, headers=headers, timeout=30)
+    r.raise_for_status()
+    data = r.json()
+
+    results: List[Dict[str, Any]] = []
+    seen = set()
+
+    def add_host(host: str, record_type: str, snippet: str):
+        if not host:
+            return
+        normalized = host.strip().lower()
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        results.append({
+            'title': host,
+            'url': f'https://{host}',
+            'snippet': snippet,
+        })
+
+    for record_type in ('a', 'cname', 'mx', 'ns'):
+        for entry in data.get(record_type, []):
+            host = entry.get('host', '')
+            ip_values = []
+            for ip_entry in entry.get('ips', []):
+                ip = ip_entry.get('ip')
+                if ip:
+                    ip_values.append(ip)
+            snippet_bits = [f'DNSDumpster {record_type.upper()} record']
+            if ip_values:
+                snippet_bits.append(f'IPs: {", ".join(ip_values[:3])}')
+            add_host(host, record_type, ' | '.join(snippet_bits))
+
+    if not results:
+        print(f'  ! DNSDumpster returned zero results for target: {target}')
+
+    return results
 
 
 def search_c99_subdomains(target: str) -> List[Dict[str, Any]]:
@@ -277,6 +464,13 @@ def run_queries(queries: List[str], backend: str, api_key: str = None, cse_id: s
                 items = search_wayback(parsed_target)
             elif backend == 'duckduckgo':
                 items = search_duckduckgo(q)
+            elif backend == 'dogpile':
+                items = search_dogpile(q)
+            elif backend == 'dnsdumpster':
+                if not api_key:
+                    raise ValueError('DNSDumpster requires --api-key')
+                target = q.replace('site:', '').split()[0] if q else q
+                items = search_dnsdumpster(target, api_key)
             elif backend == 'c99subdomain':
                 # Extract target from query (e.g., 'site:example.com' or just 'example.com')
                 target = q.replace('site:', '').split()[0] if q else q
@@ -307,7 +501,7 @@ def run_queries(queries: List[str], backend: str, api_key: str = None, cse_id: s
 
 def parse_args():
     p = argparse.ArgumentParser(description='Dork Searcher (API-backed)')
-    p.add_argument('--backend', choices=['google', 'wayback', 'duckduckgo', 'c99subdomain'], required=True)
+    p.add_argument('--backend', choices=['google', 'wayback', 'duckduckgo', 'dogpile', 'dnsdumpster', 'c99subdomain'], required=True)
     p.add_argument('--api-key', help='API key for selected backend')
     p.add_argument('--cse-id', help='Google CSE ID (for google backend)')
     p.add_argument('--targets', nargs='+', required=True, help='One or more target domains')
@@ -326,7 +520,7 @@ def main():
     if args.backend == 'wayback':
         queries = [f'site:{t}' for t in args.targets]
     # If backend is c99subdomain, use targets directly
-    elif args.backend == 'c99subdomain':
+    elif args.backend in ['c99subdomain', 'dnsdumpster']:
         queries = [f'site:{t}' for t in args.targets]
 
     api_key = args.api_key

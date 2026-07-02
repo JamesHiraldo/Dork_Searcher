@@ -26,9 +26,10 @@ dork_searcher/
 ```powershell
 # Install dependencies
 pip install -r config/requirements.txt
+python -m playwright install chromium
 
 # Run the app
-python src/dork_searcher.py
+python -m src.cli
 ```
 
 ### **Build Windows Executable**
@@ -54,7 +55,8 @@ python -m PyInstaller --onefile --name dork_searcher src/cli.py
 ### Install & Run from Source
 ```powershell
 pip install -r config/requirements.txt
-python src/dork_searcher.py
+python -m playwright install chromium
+python -m src.cli
 ```
 
 ### Install Globally (Windows)
@@ -104,7 +106,7 @@ dork_searcher  # Now available from anywhere!
 ```
 📝 Code Changes
     ↓
-🧪 Test Locally (python src/dork_searcher.py)
+🧪 Test Locally (python -m src.cli)
     ↓
 🏗️ Build Exe (PyInstaller)
     ↓

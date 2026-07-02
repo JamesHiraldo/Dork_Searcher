@@ -25,6 +25,7 @@ setup(
         'requests>=2.28.0',
         'python-dateutil>=2.8.0',
         'httpx>=0.24.0',
+        'playwright>=1.54.0',
     ],
     python_requires='>=3.8',
     classifiers=[

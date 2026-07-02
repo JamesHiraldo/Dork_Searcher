@@ -48,11 +48,11 @@ The main application code. All Python modules live here.
 |------|---------|
 | `cli.py` | Interactive menu system for user interaction |
 | `dork_searcher.py` | Entry point; runs the main application |
-| `searcher.py` | Core search engine (Google CSE, Wayback, DuckDuckGo, C99) |
+| `searcher.py` | Core search engine (Google CSE, Wayback, DuckDuckGo, Dogpile/Brave fallback, DNSDumpster, C99) |
 | `passive_probe.py` | Security analysis (headers, CSP, CORS checking) |
 | `recon_pipeline.py` | Advanced multi-step reconnaissance workflows |
 
-**Usage:** `python src/dork_searcher.py` or `dork_searcher` (if installed)
+**Usage:** `python -m src.cli` or `dork_searcher` (if installed)
 
 ---
 
@@ -123,13 +123,12 @@ Auto-generated files from PyInstaller. Safe to delete.
 ### Installation (Windows PowerShell)
 ```powershell
 # Install from source
-cd config
-pip install -r requirements.txt
-pip install -e ..
+pip install -r config/requirements.txt
+python -m playwright install chromium
+pip install -e .
 
 # Or run directly
-cd src
-python dork_searcher.py
+python -m src.cli
 ```
 
 ### Building Windows Executable
@@ -142,7 +141,7 @@ python -m PyInstaller --onefile --name dork_searcher src/cli.py
 
 **From source:**
 ```powershell
-python src/dork_searcher.py
+python -m src.cli
 ```
 
 **Pre-built executable:**
@@ -185,7 +184,7 @@ dork_searcher/
 
 ```
 1. Edit code → src/*.py
-2. Test locally → python src/dork_searcher.py
+2. Test locally → python -m src.cli
 3. Build exe → python -m PyInstaller ...
 4. Check dist/ → dork_searcher.exe
 5. Share or push to GitHub

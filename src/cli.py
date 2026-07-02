@@ -6,28 +6,53 @@ import json
 import getpass
 import asyncio
 from pathlib import Path
-from searcher import (
-    run_queries, 
-    build_queries,
-    save_json, 
-    save_csv,
-    DORK_TEMPLATES,
-    RATE_LIMIT
-)
-from passive_probe import (
-    run_probes,
-    build_target_urls_from_domains,
-    save_json as save_probe_json,
-    save_csv as save_probe_csv,
-    DEFAULT_CONCURRENCY,
-    DEFAULT_TIMEOUT,
-)
-from recon_pipeline import (
-    summarize_targets,
-    save_json as save_recon_json,
-    save_csv as save_recon_csv,
-    RATE as RECON_RATE,
-)
+
+try:
+    from .searcher import (
+        run_queries,
+        build_queries,
+        save_json,
+        save_csv,
+        DORK_TEMPLATES,
+        RATE_LIMIT,
+    )
+    from .passive_probe import (
+        run_probes,
+        build_target_urls_from_domains,
+        save_json as save_probe_json,
+        save_csv as save_probe_csv,
+        DEFAULT_CONCURRENCY,
+        DEFAULT_TIMEOUT,
+    )
+    from .recon_pipeline import (
+        summarize_targets,
+        save_json as save_recon_json,
+        save_csv as save_recon_csv,
+        RATE as RECON_RATE,
+    )
+except ImportError:
+    from searcher import (
+        run_queries,
+        build_queries,
+        save_json,
+        save_csv,
+        DORK_TEMPLATES,
+        RATE_LIMIT,
+    )
+    from passive_probe import (
+        run_probes,
+        build_target_urls_from_domains,
+        save_json as save_probe_json,
+        save_csv as save_probe_csv,
+        DEFAULT_CONCURRENCY,
+        DEFAULT_TIMEOUT,
+    )
+    from recon_pipeline import (
+        summarize_targets,
+        save_json as save_recon_json,
+        save_csv as save_recon_csv,
+        RATE as RECON_RATE,
+    )
 
 
 def clear_screen():
@@ -178,6 +203,82 @@ def menu_duckduckgo_search():
     input("\nPress Enter to continue...")
 
 
+def menu_dogpile_search():
+    """Menu for Dogpile search"""
+    clear_screen()
+    print_header()
+    print("[*] Dogpile Search")
+    print("-" * 60)
+
+    api_key = getpass.getpass("Enter Dogpile API Key (optional; press Enter to skip): ").strip()
+
+    targets = get_multiple_inputs("Enter target domain(s)")
+    if not targets:
+        print("Error: At least one target required")
+        return
+
+    ensure_result_folder()
+    output_file = get_input("Output file path", "Result/dogpile_results.json")
+    rate_limit = float(get_input("Rate limit (seconds)", str(RATE_LIMIT)))
+
+    queries = build_queries(targets)
+
+    print(f"[*] Running {len(queries)} queries...")
+    results = run_queries(queries, 'dogpile', api_key=api_key or None, rate_limit=rate_limit)
+
+    save_json(output_file, results)
+    print(f"[+] Results saved to: {output_file}")
+
+    if input("\nAlso save as CSV? (y/n): ").lower() == 'y':
+        csv_file = output_file.replace('.json', '.csv')
+        save_csv(csv_file, results)
+        print(f"[+] CSV saved to: {csv_file}")
+
+    if api_key:
+        api_key = None
+
+    input("\nPress Enter to continue...")
+
+
+def menu_dnsdumpster_search():
+    """Menu for DNSDumpster search"""
+    clear_screen()
+    print_header()
+    print("[*] DNSDumpster Search")
+    print("-" * 60)
+
+    api_key = getpass.getpass("Enter DNSDumpster API Key (input hidden): ").strip()
+    if not api_key:
+        print("Error: API Key required")
+        return
+
+    targets = get_multiple_inputs("Enter target domain(s)")
+    if not targets:
+        print("Error: At least one target required")
+        return
+
+    ensure_result_folder()
+    output_file = get_input("Output file path", "Result/dnsdumpster_results.json")
+    rate_limit = float(get_input("Rate limit (seconds)", str(RATE_LIMIT)))
+
+    queries = [f'site:{t}' for t in targets]
+
+    print(f"[*] Running {len(queries)} queries...")
+    results = run_queries(queries, 'dnsdumpster', api_key=api_key, rate_limit=rate_limit)
+
+    save_json(output_file, results)
+    print(f"[+] Results saved to: {output_file}")
+
+    if input("\nAlso save as CSV? (y/n): ").lower() == 'y':
+        csv_file = output_file.replace('.json', '.csv')
+        save_csv(csv_file, results)
+        print(f"[+] CSV saved to: {csv_file}")
+
+    api_key = None
+
+    input("\nPress Enter to continue...")
+
+
 def menu_c99_subdomain_search():
     """Menu for C99.nl Subdomain search"""
     clear_screen()
@@ -217,8 +318,8 @@ def menu_cross_reference():
     print("[*] Cross-Reference Subdomains with Search Results")
     print("-" * 60)
     
-    backend = input("\nSearch backend to cross-reference (wayback/duckduckgo/google): ").strip().lower()
-    if backend not in ['wayback', 'duckduckgo', 'google']:
+    backend = input("\nSearch backend to cross-reference (wayback/duckduckgo/dogpile/dnsdumpster/google): ").strip().lower()
+    if backend not in ['wayback', 'duckduckgo', 'dogpile', 'dnsdumpster', 'google']:
         print("Invalid backend")
         return
     
@@ -402,15 +503,17 @@ def main_menu():
         print("[1] Google CSE Search")
         print("[2] Wayback Machine (CDX) Search")
         print("[3] DuckDuckGo Search")
-        print("[4] C99.nl Subdomain Finder")
-        print("[5] Cross-Reference Results")
-        print("[6] Recon Pipeline (Wayback + Params)")
-        print("[7] Passive Probe (Headers/CSP/CORS)")
-        print("[8] View Dork Templates")
+        print("[4] Dogpile Search")
+        print("[5] C99.nl Subdomain Finder")
+        print("[6] DNSDumpster Search")
+        print("[7] Cross-Reference Results")
+        print("[8] Recon Pipeline (Wayback + Params)")
+        print("[9] Passive Probe (Headers/CSP/CORS)")
+        print("[10] View Dork Templates")
         print("[0] Exit")
         print()
         
-        choice = input("Select an option (0-8): ").strip()
+        choice = input("Select an option (0-10): ").strip()
         
         if choice == '1':
             menu_google_search()
@@ -419,14 +522,18 @@ def main_menu():
         elif choice == '3':
             menu_duckduckgo_search()
         elif choice == '4':
-            menu_c99_subdomain_search()
+            menu_dogpile_search()
         elif choice == '5':
-            menu_cross_reference()
+            menu_c99_subdomain_search()
         elif choice == '6':
-            menu_recon_pipeline()
+            menu_dnsdumpster_search()
         elif choice == '7':
-            menu_passive_probe()
+            menu_cross_reference()
         elif choice == '8':
+            menu_recon_pipeline()
+        elif choice == '9':
+            menu_passive_probe()
+        elif choice == '10':
             menu_view_templates()
         elif choice == '0':
             print("\n[*] Exiting Dork Searcher. Goodbye!")

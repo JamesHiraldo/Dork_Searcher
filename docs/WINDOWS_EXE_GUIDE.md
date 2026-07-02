@@ -26,7 +26,9 @@ The application provides passive reconnaissance tools:
 - **Google CSE Search** - Search with your Google API
 - **Wayback Machine** - Find archived versions of websites
 - **DuckDuckGo** - Search without API
+- **Dogpile** - Attempts Dogpile first, then falls back to browser-rendered Brave results when needed
 - **Subdomain Finder** - Discover subdomains
+- **DNSDumpster** - DNS and attack-surface lookup with API key
 - **Passive Probing** - Check security headers
 - **Recon Pipeline** - Run multiple searches at once
 
@@ -66,6 +68,7 @@ The application provides passive reconnaissance tools:
 **A:** When you select a search option that needs an API key, you'll be prompted for input:
 - For sensitive keys like Google API keys, input will be **hidden** (you won't see typing)
 - Copy-paste works if typing feels unreliable
+- DNSDumpster requires an API key; Dogpile does not use one
 
 ### Q: Can I run it from Command Prompt?
 **A:** Yes!
@@ -109,6 +112,7 @@ Check the `Result/` folder for your findings!
 ## ✨ Tips & Tricks
 
 - **First time using?** Try DuckDuckGo search - no API key needed!
+- **Dogpile fallback** - If Dogpile only shows a loading shell, the app automatically uses Brave search results instead
 - **Bulk operations** - Use the Recon Pipeline to run multiple searches
 - **Export results** - Save to CSV to analyze in Excel
 - **High rate limits** - If getting blocked, increase the rate delay in settings

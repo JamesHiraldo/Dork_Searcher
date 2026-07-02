@@ -6,6 +6,7 @@ This guide is updated for the current menu and workflow.
 
 - Python 3.8+ (if installing from source)
 - Internet access for external APIs (Google CSE, Wayback, DuckDuckGo, etc.)
+- Playwright Chromium browser binary for Dogpile fallback rendering (`python -m playwright install chromium`)
 
 ## Quick Start: Windows Executable (No Python Required)
 
@@ -68,7 +69,8 @@ cd "path\to\dork_searcher"
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r config/requirements.txt
+python -m playwright install chromium
 pip install -e .
 ```
 
@@ -85,7 +87,8 @@ cd /path/to/dork_searcher
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r config/requirements.txt
+python -m playwright install chromium
 pip install -e .
 ```
 
@@ -100,7 +103,7 @@ dork_searcher
 From the project folder:
 
 ```bash
-python dork_searcher.py
+python -m src.cli
 ```
 
 ## Current Menu Options
@@ -108,22 +111,32 @@ python dork_searcher.py
 1. Google CSE Search
 2. Wayback Machine (CDX) Search
 3. DuckDuckGo Search
-4. C99.nl Subdomain Finder
-5. Cross-Reference Results
-6. Recon Pipeline (Wayback + Params)
-7. Passive Probe (Headers/CSP/CORS)
-8. View Dork Templates
+4. Dogpile Search
+5. C99.nl Subdomain Finder
+6. DNSDumpster Search
+7. Cross-Reference Results
+8. Recon Pipeline (Wayback + Params)
+9. Passive Probe (Headers/CSP/CORS)
+10. View Dork Templates
 0. Exit
 
 ## API Keys
 
 ### Google CSE
 
-Required only for option 1 and Google-based cross-reference mode in option 5.
+Required only for option 1 and Google-based cross-reference mode in option 7.
 
 - Create engine: https://programmablesearchengine.google.com/
 - Create API key in Google Cloud
 - Provide API Key and CSE ID when prompted
+
+### DNSDumpster
+
+Required for option 6.
+
+- Create or use a DNSDumpster account
+- Provide the DNSDumpster API key when prompted
+- The key is sent via the documented `X-API-Key` header
 
 ### Key Handling
 
@@ -142,7 +155,7 @@ Required only for option 1 and Google-based cross-reference mode in option 5.
 ### `ModuleNotFoundError` (for example: `requests` or `httpx`)
 
 ```bash
-pip install -r requirements.txt
+pip install -r config/requirements.txt
 ```
 
 If using a virtual environment, make sure it is activated first.
@@ -158,7 +171,7 @@ pip install -e .
 Or run directly with:
 
 ```bash
-python dork_searcher.py
+python -m src.cli
 ```
 
 ### API / network errors
@@ -166,6 +179,7 @@ python dork_searcher.py
 - Check internet connectivity
 - Increase rate delay in menu prompts
 - Verify Google API key and CSE ID for Google mode
+- If Dogpile only returns a loading shell, the app automatically falls back to browser-rendered Brave results
 
 ## Optional Windows Batch Wrapper
 

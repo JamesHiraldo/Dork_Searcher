@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "dork-searcher"
 version = "1.0.0"
 description = "API-based Dork Searcher with interactive CLI menu for passive reconnaissance"
-readme = "README.md"
+readme = "docs/README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
@@ -33,6 +33,7 @@ dependencies = [
     "requests>=2.28.0",
     "python-dateutil>=2.8.0",
     "httpx>=0.24.0",
+    "playwright>=1.54.0",
 ]
 
 [project.optional-dependencies]
@@ -47,7 +48,7 @@ build = [
 ]
 
 [project.scripts]
-dork_searcher = "cli:main"
+dork_searcher = "src.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Maydayx2/dork-searcher"
@@ -56,7 +57,7 @@ Repository = "https://github.com/Maydayx2/dork-searcher.git"
 Issues = "https://github.com/Maydayx2/dork-searcher/issues"
 
 [tool.setuptools]
-packages = ["dork_searcher"]
+packages = ["src"]
 include-package-data = true
 
 [tool.black]

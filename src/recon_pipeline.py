@@ -24,18 +24,19 @@ def fetch_wayback_urls(target: str, limit: int = 5000) -> List[str]:
     endpoint = 'http://web.archive.org/cdx/search/cdx'
     params = {
         'url': f'{target}/*',
-        'output': 'json',
+        'output': 'txt',
         'fl': 'original',
         'collapse': 'urlkey',
         'limit': limit,
     }
     r = requests.get(endpoint, params=params, timeout=30)
     r.raise_for_status()
-    data = r.json()
     urls = []
-    # first row may be header
-    for row in data[1:]:
-        urls.append(row[0])
+    for line in r.text.splitlines():
+        original = line.strip()
+        if not original or original.lower() == 'original':
+            continue
+        urls.append(original)
     return urls
 
 
