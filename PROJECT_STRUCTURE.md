@@ -67,8 +67,8 @@ Setup and dependency management files.
 | `dork_searcher.spec` | PyInstaller config (generated when building exe) |
 
 **Usage:** 
-- `pip install -r config/requirements.txt` (install dependencies)
-- `python -m pip install -e .` (install from config files)
+- `pip install -r config/requirements.txt` (install dependencies )
+- `python -m pip install -e .` (install from config files )
 
 ---
 
