@@ -20,4 +20,3 @@ the applicable bug bounty program.
 
 Result artifacts can contain sensitive reconnaissance data and are ignored by Git.
 Store, transmit, and dispose of them according to the target program's rules.
-

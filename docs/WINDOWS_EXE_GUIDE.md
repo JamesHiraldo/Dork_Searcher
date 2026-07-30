@@ -1,7 +1,7 @@
 # Windows executable guide
 
-The executable is a console application for authorized reconnaissance. Keep it in a
-dedicated folder where it can create a local `Result` directory.
+The executable is a console application for authorized reconnaissance. Interactive
+reports are saved under `Desktop\Dork_Searcher_Results` by default.
 
 ```powershell
 .\dork_searcher.exe
@@ -25,10 +25,15 @@ executable. All other core workflows remain available without a browser installa
 The interactive menu uses color in supported terminals. Set `NO_COLOR=1` before
 launching to force plain output.
 
+The program resolves the actual Windows Desktop path, including OneDrive or localized
+folder redirection. If it is not writable, the application automatically uses
+`%LOCALAPPDATA%\Dork_Searcher\Results` instead. Option 10 manages persistent custom
+dorks stored in the same easy-to-find results folder.
+
 Important operational rules:
 
 - Use only targets explicitly authorized by a bug bounty program or owner.
-- Treat option 9 as active testing; it sends bodyless GET requests.
-- Keep `Result` artifacts private because archive URLs can contain sensitive values.
+- Treat option 8 as active testing; it sends bodyless GET requests.
+- Keep result artifacts private because archive URLs can contain sensitive values.
 - Replace the executable with every release rather than mixing old binaries and new
   source files.

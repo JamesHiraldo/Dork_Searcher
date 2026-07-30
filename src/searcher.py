@@ -154,11 +154,12 @@ def _query_target(query: str) -> str | None:
         return None
 
 
-def build_queries(targets: list[str]) -> list[str]:
+def build_queries(targets: list[str], templates: Iterable[str] | None = None) -> list[str]:
+    active_templates = list(templates) if templates is not None else DORK_TEMPLATES
     queries: list[str] = []
     for target in normalize_targets(targets):
-        queries.extend(template.format(t=target) for template in DORK_TEMPLATES)
-    return queries
+        queries.extend(template.replace("{t}", target) for template in active_templates)
+    return list(dict.fromkeys(queries))
 
 
 def _dedupe_results(items: Iterable[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -481,15 +482,15 @@ def search_certificate_transparency(
     session: requests.Session | None = None,
     max_results: int = 10000,
 ) -> list[dict[str, Any]]:
-    """Discover CT names through crt.sh with a bounded Cert Spotter fallback."""
+    """Enumerate observed subdomains through crt.sh and Cert Spotter."""
     normalized_target = normalize_hostname(target)
     client = session or requests.Session()
     if max_results < 1:
         return []
-    hosts: set[str] = set()
+    host_sources: dict[str, set[str]] = {}
     deadline = time.monotonic() + 60.0
 
-    def add_names(names: Iterable[Any]) -> None:
+    def add_names(names: Iterable[Any], source: str) -> None:
         for raw_name in names:
             name = raw_name.strip().lower()
             if name.startswith("*."):
@@ -498,11 +499,12 @@ def search_certificate_transparency(
                 host = normalize_hostname(name)
             except ScopeError:
                 continue
-            if host_in_scope(host, normalized_target, include_subdomains=True):
-                hosts.add(host)
+            if host != normalized_target and host_in_scope(
+                host, normalized_target, include_subdomains=True
+            ):
+                host_sources.setdefault(host, set()).add(source)
 
-    source = "crt.sh"
-    crt_error: Exception | None = None
+    provider_errors: list[str] = []
     try:
         response = _get_with_retries(
             client,
@@ -517,70 +519,67 @@ def search_certificate_transparency(
             raise SearchBackendError("crt.sh returned an unexpected document")
         for certificate in payload:
             if isinstance(certificate, dict):
-                add_names(str(certificate.get("name_value", "")).splitlines())
+                add_names(str(certificate.get("name_value", "")).splitlines(), "crt.sh")
     except (requests.RequestException, SearchBackendError, ValueError) as exc:
-        crt_error = exc
+        provider_errors.append(f"crt.sh={exc}")
 
-    if not hosts:
-        source = "certspotter"
-        after: str | None = None
-        certspotter_error: Exception | None = None
-        try:
-            for _ in range(20):
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise SearchBackendError("Certificate Transparency request budget exceeded")
-                params: dict[str, Any] = {
-                    "domain": normalized_target,
-                    "include_subdomains": "true",
-                    "expand": "dns_names",
-                }
-                if after:
-                    params["after"] = after
-                response = _get_with_retries(
-                    client,
-                    "https://api.certspotter.com/v1/issuances",
-                    retries=1,
-                    params=params,
-                    timeout=max(1.0, min(15.0, remaining)),
-                    headers={"User-Agent": "dork-searcher/2.0"},
-                )
-                issuances = response.json()
-                if not isinstance(issuances, list):
-                    raise SearchBackendError("Cert Spotter returned an unexpected document")
-                if not issuances:
+    after: str | None = None
+    try:
+        for _ in range(20):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise SearchBackendError("Certificate Transparency request budget exceeded")
+            params: dict[str, Any] = {
+                "domain": normalized_target,
+                "include_subdomains": "true",
+                "expand": "dns_names",
+            }
+            if after:
+                params["after"] = after
+            response = _get_with_retries(
+                client,
+                "https://api.certspotter.com/v1/issuances",
+                retries=1,
+                params=params,
+                timeout=max(1.0, min(15.0, remaining)),
+                headers={"User-Agent": "dork-searcher/2.0"},
+            )
+            issuances = response.json()
+            if not isinstance(issuances, list):
+                raise SearchBackendError("Cert Spotter returned an unexpected document")
+            if not issuances:
+                break
+            for issuance in issuances:
+                if not isinstance(issuance, dict):
+                    continue
+                dns_names = issuance.get("dns_names", [])
+                if isinstance(dns_names, list):
+                    add_names(dns_names, "certspotter")
+                if len(host_sources) >= max_results:
                     break
-                for issuance in issuances:
-                    if not isinstance(issuance, dict):
-                        continue
-                    dns_names = issuance.get("dns_names", [])
-                    if isinstance(dns_names, list):
-                        add_names(dns_names)
-                    if len(hosts) >= max_results:
-                        break
-                last = issuances[-1] if issuances else None
-                next_after = (
-                    str(last.get("id")) if isinstance(last, dict) and last.get("id") else None
-                )
-                if len(hosts) >= max_results or not next_after or next_after == after:
-                    break
-                after = next_after
-        except (requests.RequestException, SearchBackendError, ValueError) as exc:
-            certspotter_error = exc
-        if not hosts and certspotter_error:
-            raise SearchBackendError(
-                f"Certificate Transparency sources failed: crt.sh={crt_error}; "
-                f"Cert Spotter={certspotter_error}"
-            ) from certspotter_error
+            last = issuances[-1] if issuances else None
+            next_after = str(last.get("id")) if isinstance(last, dict) and last.get("id") else None
+            if len(host_sources) >= max_results or not next_after or next_after == after:
+                break
+            after = next_after
+    except (requests.RequestException, SearchBackendError, ValueError) as exc:
+        provider_errors.append(f"Cert Spotter={exc}")
+
+    if not host_sources and len(provider_errors) == 2:
+        raise SearchBackendError(
+            "Certificate Transparency sources failed: " + "; ".join(provider_errors)
+        )
 
     return [
         _result(
             "https://" + host,
             host,
-            "Observed in a public Certificate Transparency log; DNS not yet verified",
-            source,
+            "Observed in public Certificate Transparency logs via "
+            + ", ".join(sorted(host_sources[host]))
+            + "; DNS not yet verified",
+            "+".join(sorted(host_sources[host])),
         )
-        for host in sorted(hosts)[:max_results]
+        for host in sorted(host_sources)[:max_results]
     ]
 
 
@@ -692,6 +691,8 @@ def run_queries(
 
             for item in items:
                 row = {field: item.get(field, "") for field in RESULT_FIELDS}
+                if backend in ("c99subdomain", "crtsh") and not row["url"] and row["title"]:
+                    row["url"] = "https://" + normalize_hostname(str(row["title"]))
                 row["query"] = query
                 results.append(row)
             print(f"  [+] {len(items)} result(s)")

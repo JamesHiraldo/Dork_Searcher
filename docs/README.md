@@ -27,7 +27,7 @@ Cross-referencing parses DNS hostnames. It never uses substring matching.
 - Direct Dogpile mode for provider diagnostics
 - Wayback CDX HTTPS collection with retries and resumption-key pagination
 - Parameter and endpoint inventory with sensitive-value redaction by default
-- Certificate Transparency discovery through `crt.sh`, with Cert Spotter fallback
+- Passive subdomain enumeration that merges `crt.sh` and Cert Spotter observations
 - DNSDumpster API discovery
 - Active, bodyless GET metadata probing with redirect and private-IP safeguards
 - CSP/security-header inventory and evidence-based CORS classification
@@ -56,6 +56,10 @@ require Playwright.
 
 The interactive menu uses terminal-safe ANSI colors when supported. Set `NO_COLOR=1`
 to disable them; redirected output is always left uncolored.
+
+Menu option 10 displays the built-in dork templates and lets users add or remove
+persistent custom templates. Custom entries are automatically target-scoped with
+`site:{t}` and included in Google, DuckDuckGo, and Dogpile runs.
 
 ## Entry points
 
@@ -116,10 +120,15 @@ process listings, prefer `DORK_SEARCHER_API_KEY`. Google CSE IDs can be supplied
 
 ## Artifacts and operational safety
 
-`Result/` is ignored by Git because archive URLs and probe results can contain
-sensitive target information. JSON is the canonical evidence format. CSV is
-sanitized for safe opening in spreadsheet applications. Writes are atomic, so an
-interrupted run does not partially overwrite a prior report.
+Interactive results default to `Desktop\Dork_Searcher_Results` so the files are easy
+to find. JSON is the canonical evidence format. CSV is sanitized for safe opening in
+spreadsheet applications. Writes are atomic, so an interrupted run does not partially
+overwrite a prior report.
+
+The application resolves the actual Windows Desktop location, including redirected
+or localized folders, and verifies that it is writable. If unavailable, output moves
+to `%LOCALAPPDATA%\Dork_Searcher\Results`. Set `DORK_SEARCHER_OUTPUT_DIR` to select a
+different default location.
 
 Backends that depend on third-party HTML can change or rate-limit requests. Their
 failures are reported explicitly; an empty successful result is not silently

@@ -53,12 +53,27 @@ def test_certificate_transparency_returns_only_observed_valid_scoped_names():
                     {"name_value": "api.example.com\n*.dev.example.com"},
                     {"name_value": "notexample.com\ndev-.example.com"},
                 ]
-            )
+            ),
+            FakeResponse(
+                [
+                    {
+                        "id": "42",
+                        "dns_names": ["api.example.com", "stage.example.com", "example.com"],
+                    }
+                ]
+            ),
+            FakeResponse([]),
         ]
     )
     results = search_certificate_transparency("example.com", session=session)
-    assert [row["title"] for row in results] == ["api.example.com", "dev.example.com"]
+    assert [row["title"] for row in results] == [
+        "api.example.com",
+        "dev.example.com",
+        "stage.example.com",
+    ]
     assert all(row["result_type"] == "observed" for row in results)
+    assert all(row["url"] == f"https://{row['title']}" for row in results)
+    assert results[0]["source"] == "certspotter+crt.sh"
 
 
 def test_certificate_transparency_falls_back_to_certspotter(monkeypatch):
