@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['cli.py'],
-    pathex=[],
+    ['../src/cli.py'],
+    pathex=['src'],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=['scope', 'wayback', 'artifacts'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

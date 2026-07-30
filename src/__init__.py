@@ -1,12 +1,15 @@
-"""
-Dork Searcher - Passive Reconnaissance Tool
-API-based Dork Searcher with interactive CLI menu for finding subdomains and endpoints
-"""
+"""Authorized search, archive, discovery, and HTTP reconnaissance tooling."""
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Maydayx2"
-__description__ = "Passive Recon Tool - Dorker Searcher & Subdomain/Endpoint Finder"
+__description__ = "Authorized reconnaissance and endpoint research toolkit"
 
-from .cli import main
 
-__all__ = ['main']
+def main() -> int:
+    """Load the interactive application lazily to keep library imports lightweight."""
+    from .cli import main as cli_main
+
+    return cli_main()
+
+
+__all__ = ["main"]

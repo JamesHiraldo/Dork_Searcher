@@ -1,559 +1,575 @@
 #!/usr/bin/env python3
-"""Interactive CLI menu for Dork Searcher"""
+# mypy: disable-error-code="no-redef"
+"""Interactive interface for authorized reconnaissance workflows."""
+
+from __future__ import annotations
+
+import asyncio
+import getpass
+import json
 import os
 import sys
-import json
-import getpass
-import asyncio
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-try:
-    from .searcher import (
-        run_queries,
-        build_queries,
-        save_json,
-        save_csv,
-        DORK_TEMPLATES,
-        RATE_LIMIT,
+if __package__:
+    from .artifacts import derived_csv_path, ensure_distinct_paths
+    from .passive_probe import (
+        DEFAULT_CONCURRENCY,
+        DEFAULT_MAX_REDIRECTS,
+        DEFAULT_TIMEOUT,
+        MAX_CONCURRENCY,
+        build_target_urls_from_domains,
+        run_probes,
     )
     from .passive_probe import (
-        run_probes,
-        build_target_urls_from_domains,
-        save_json as save_probe_json,
         save_csv as save_probe_csv,
-        DEFAULT_CONCURRENCY,
-        DEFAULT_TIMEOUT,
+    )
+    from .passive_probe import (
+        save_json as save_probe_json,
     )
     from .recon_pipeline import (
+        DEFAULT_MAX_URLS,
         summarize_targets,
-        save_json as save_recon_json,
-        save_csv as save_recon_csv,
+    )
+    from .recon_pipeline import (
         RATE as RECON_RATE,
     )
-except ImportError:
-    from searcher import (
-        run_queries,
-        build_queries,
-        save_json,
-        save_csv,
+    from .recon_pipeline import (
+        save_csv as save_recon_csv,
+    )
+    from .recon_pipeline import (
+        save_json as save_recon_json,
+    )
+    from .scope import ScopeError, normalize_hostname, normalize_targets, parse_http_url
+    from .searcher import (
+        DEFAULT_SEARCH_RESULTS,
+        DEFAULT_WAYBACK_RESULTS,
         DORK_TEMPLATES,
         RATE_LIMIT,
+        build_queries,
+        cross_reference_with_subdomains,
+        run_queries,
+        save_csv,
+        save_json,
+    )
+else:  # pragma: no cover
+    from artifacts import derived_csv_path, ensure_distinct_paths  # type: ignore
+    from passive_probe import (  # type: ignore
+        DEFAULT_CONCURRENCY,
+        DEFAULT_MAX_REDIRECTS,
+        DEFAULT_TIMEOUT,
+        MAX_CONCURRENCY,
+        build_target_urls_from_domains,
+        run_probes,
     )
     from passive_probe import (
-        run_probes,
-        build_target_urls_from_domains,
-        save_json as save_probe_json,
         save_csv as save_probe_csv,
-        DEFAULT_CONCURRENCY,
-        DEFAULT_TIMEOUT,
+    )
+    from passive_probe import (
+        save_json as save_probe_json,
+    )
+    from recon_pipeline import (  # type: ignore
+        DEFAULT_MAX_URLS,
+        summarize_targets,
     )
     from recon_pipeline import (
-        summarize_targets,
-        save_json as save_recon_json,
-        save_csv as save_recon_csv,
         RATE as RECON_RATE,
     )
-
-
-def clear_screen():
-    """Clear terminal screen"""
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-
-def print_header():
-    """Print application header"""
-    print("=" * 60)
-    print("         DORK SEARCHER - Reconnaissance Tool By Maydayx2")
-    print("=" * 60)
-    print()
-
-
-def ensure_result_folder():
-    """Ensure Result folder exists"""
-    result_dir = Path("Result")
-    result_dir.mkdir(exist_ok=True)
-    return result_dir
-
-
-def get_input(prompt: str, default: str = None) -> str:
-    """Get user input with optional default"""
-    if default:
-        prompt = f"{prompt} [{default}]: "
-    else:
-        prompt = f"{prompt}: "
-    value = input(prompt).strip()
-    return value if value else default
-
-
-def get_multiple_inputs(prompt: str) -> list:
-    """Get multiple comma/space-separated inputs"""
-    value = input(f"{prompt} (comma or space separated): ").strip()
-    # Split by comma or space
-    items = [item.strip() for item in value.replace(',', ' ').split()]
-    return [item for item in items if item]
-
-
-def menu_google_search():
-    """Menu for Google CSE search"""
-    clear_screen()
-    print_header()
-    print("[*] Google CSE Search")
-    print("-" * 60)
-    
-    api_key = getpass.getpass("Enter Google API Key (input hidden): ").strip()
-    if not api_key:
-        print("Error: API Key required")
-        return
-    
-    cse_id = get_input("Enter Google CSE ID")
-    if not cse_id:
-        print("Error: CSE ID required")
-        return
-    
-    targets = get_multiple_inputs("Enter target domain(s)")
-    if not targets:
-        print("Error: At least one target required")
-        return
-    
-    ensure_result_folder()
-    output_file = get_input("Output file path", "Result/google_results.json")
-    rate_limit = float(get_input("Rate limit (seconds)", str(RATE_LIMIT)))
-    
-    print(f"\n[*] Building {len(targets)} target(s) with {len(DORK_TEMPLATES)} templates...")
-    queries = build_queries(targets)
-    
-    print(f"[*] Running {len(queries)} queries...")
-    results = run_queries(queries, 'google', api_key=api_key, cse_id=cse_id, rate_limit=rate_limit)
-    
-    save_json(output_file, results)
-    print(f"[+] Results saved to: {output_file}")
-    
-    if input("\nAlso save as CSV? (y/n): ").lower() == 'y':
-        csv_file = output_file.replace('.json', '.csv')
-        save_csv(csv_file, results)
-        print(f"[+] CSV saved to: {csv_file}")
-
-    # Clear sensitive references before returning to menu.
-    api_key = None
-    
-    input("\nPress Enter to continue...")
-
-
-def menu_wayback_search():
-    """Menu for Wayback Machine search"""
-    clear_screen()
-    print_header()
-    print("[*] Wayback Machine (CDX) Search")
-    print("-" * 60)
-    
-    targets = get_multiple_inputs("Enter target domain(s)")
-    if not targets:
-        print("Error: At least one target required")
-        return
-    
-    ensure_result_folder()
-    output_file = get_input("Output file path", "Result/wayback_results.json")
-    rate_limit = float(get_input("Rate limit (seconds)", str(RATE_LIMIT)))
-    
-    queries = [f'site:{t}' for t in targets]
-    
-    print(f"[*] Running {len(queries)} queries...")
-    results = run_queries(queries, 'wayback', rate_limit=rate_limit)
-    
-    save_json(output_file, results)
-    print(f"[+] Results saved to: {output_file}")
-    
-    if input("\nAlso save as CSV? (y/n): ").lower() == 'y':
-        csv_file = output_file.replace('.json', '.csv')
-        save_csv(csv_file, results)
-        print(f"[+] CSV saved to: {csv_file}")
-    
-    input("\nPress Enter to continue...")
-
-
-def menu_duckduckgo_search():
-    """Menu for DuckDuckGo search"""
-    clear_screen()
-    print_header()
-    print("[*] DuckDuckGo Search")
-    print("-" * 60)
-    
-    targets = get_multiple_inputs("Enter target domain(s)")
-    if not targets:
-        print("Error: At least one target required")
-        return
-    
-    ensure_result_folder()
-    output_file = get_input("Output file path", "Result/duckduckgo_results.json")
-    rate_limit = float(get_input("Rate limit (seconds)", str(RATE_LIMIT)))
-    
-    queries = build_queries(targets)
-    
-    print(f"[*] Running {len(queries)} queries...")
-    results = run_queries(queries, 'duckduckgo', rate_limit=rate_limit)
-    
-    save_json(output_file, results)
-    print(f"[+] Results saved to: {output_file}")
-    
-    if input("\nAlso save as CSV? (y/n): ").lower() == 'y':
-        csv_file = output_file.replace('.json', '.csv')
-        save_csv(csv_file, results)
-        print(f"[+] CSV saved to: {csv_file}")
-    
-    input("\nPress Enter to continue...")
-
-
-def menu_dogpile_search():
-    """Menu for Dogpile search"""
-    clear_screen()
-    print_header()
-    print("[*] Dogpile Search")
-    print("-" * 60)
-
-    api_key = getpass.getpass("Enter Dogpile API Key (optional; press Enter to skip): ").strip()
-
-    targets = get_multiple_inputs("Enter target domain(s)")
-    if not targets:
-        print("Error: At least one target required")
-        return
-
-    ensure_result_folder()
-    output_file = get_input("Output file path", "Result/dogpile_results.json")
-    rate_limit = float(get_input("Rate limit (seconds)", str(RATE_LIMIT)))
-
-    queries = build_queries(targets)
-
-    print(f"[*] Running {len(queries)} queries...")
-    results = run_queries(queries, 'dogpile', api_key=api_key or None, rate_limit=rate_limit)
-
-    save_json(output_file, results)
-    print(f"[+] Results saved to: {output_file}")
-
-    if input("\nAlso save as CSV? (y/n): ").lower() == 'y':
-        csv_file = output_file.replace('.json', '.csv')
-        save_csv(csv_file, results)
-        print(f"[+] CSV saved to: {csv_file}")
-
-    if api_key:
-        api_key = None
-
-    input("\nPress Enter to continue...")
-
-
-def menu_dnsdumpster_search():
-    """Menu for DNSDumpster search"""
-    clear_screen()
-    print_header()
-    print("[*] DNSDumpster Search")
-    print("-" * 60)
-
-    api_key = getpass.getpass("Enter DNSDumpster API Key (input hidden): ").strip()
-    if not api_key:
-        print("Error: API Key required")
-        return
-
-    targets = get_multiple_inputs("Enter target domain(s)")
-    if not targets:
-        print("Error: At least one target required")
-        return
-
-    ensure_result_folder()
-    output_file = get_input("Output file path", "Result/dnsdumpster_results.json")
-    rate_limit = float(get_input("Rate limit (seconds)", str(RATE_LIMIT)))
-
-    queries = [f'site:{t}' for t in targets]
-
-    print(f"[*] Running {len(queries)} queries...")
-    results = run_queries(queries, 'dnsdumpster', api_key=api_key, rate_limit=rate_limit)
-
-    save_json(output_file, results)
-    print(f"[+] Results saved to: {output_file}")
-
-    if input("\nAlso save as CSV? (y/n): ").lower() == 'y':
-        csv_file = output_file.replace('.json', '.csv')
-        save_csv(csv_file, results)
-        print(f"[+] CSV saved to: {csv_file}")
-
-    api_key = None
-
-    input("\nPress Enter to continue...")
-
-
-def menu_c99_subdomain_search():
-    """Menu for C99.nl Subdomain search"""
-    clear_screen()
-    print_header()
-    print("[*] C99.nl Subdomain Finder")
-    print("-" * 60)
-    
-    targets = get_multiple_inputs("Enter target domain(s)")
-    if not targets:
-        print("Error: At least one target required")
-        return
-    
-    ensure_result_folder()
-    output_file = get_input("Output file path", "Result/c99_subdomains.json")
-    rate_limit = float(get_input("Rate limit (seconds)", str(RATE_LIMIT)))
-    
-    queries = [f'site:{t}' for t in targets]
-    
-    print(f"[*] Running {len(queries)} subdomain searches...")
-    results = run_queries(queries, 'c99subdomain', rate_limit=rate_limit)
-    
-    save_json(output_file, results)
-    print(f"[+] Results saved to: {output_file}")
-    
-    if input("\nAlso save as CSV? (y/n): ").lower() == 'y':
-        csv_file = output_file.replace('.json', '.csv')
-        save_csv(csv_file, results)
-        print(f"[+] CSV saved to: {csv_file}")
-    
-    input("\nPress Enter to continue...")
-
-
-def menu_cross_reference():
-    """Menu for cross-referencing results"""
-    clear_screen()
-    print_header()
-    print("[*] Cross-Reference Subdomains with Search Results")
-    print("-" * 60)
-    
-    backend = input("\nSearch backend to cross-reference (wayback/duckduckgo/dogpile/dnsdumpster/google): ").strip().lower()
-    if backend not in ['wayback', 'duckduckgo', 'dogpile', 'dnsdumpster', 'google']:
-        print("Invalid backend")
-        return
-    
-    if backend == 'google':
-        api_key = getpass.getpass("Enter Google API Key (input hidden): ").strip()
-        cse_id = get_input("Enter Google CSE ID")
-        if not api_key or not cse_id:
-            print("Error: API Key and CSE ID required for Google")
-            return
-    
-    targets = get_multiple_inputs("Enter target domain(s)")
-    if not targets:
-        print("Error: At least one target required")
-        return
-    
-    subdomain_file = get_input("Path to subdomain results JSON (from C99 search)")
-    if not os.path.exists(subdomain_file):
-        print(f"Error: File not found: {subdomain_file}")
-        return
-    
-    ensure_result_folder()
-    output_file = get_input("Output file path", "Result/crossref_results.json")
-    rate_limit = float(get_input("Rate limit (seconds)", str(RATE_LIMIT)))
-    
-    # Load subdomain data
-    with open(subdomain_file, 'r', encoding='utf-8') as f:
-        subdomain_results = json.load(f)
-    
-    queries = build_queries(targets)
-    if backend == 'wayback':
-        queries = [f'site:{t}' for t in targets]
-    
-    api_key_val = None
-    cse_id_val = None
-    if backend == 'google':
-        api_key_val = api_key
-        cse_id_val = cse_id
-    
-    print(f"[*] Running {len(queries)} queries with cross-reference...")
-    results = run_queries(queries, backend, api_key=api_key_val, cse_id=cse_id_val, rate_limit=rate_limit)
-    
-    # Add cross-reference data
-    subdomains = [item.get('url', '').replace('https://', '').replace('http://', '') 
-                 for item in subdomain_results if item.get('url')]
-    urls_to_check = [item.get('url', '') for item in results if item.get('url')]
-    
-    matches = 0
-    for url in urls_to_check:
-        for subdomain in subdomains:
-            if subdomain.lower() in url.lower():
-                results.append({
-                    'query': 'cross_reference',
-                    'title': subdomain,
-                    'url': url,
-                    'snippet': 'CROSS_REF_MATCH'
-                })
-                matches += 1
-    
-    save_json(output_file, results)
-    print(f"[+] Results saved to: {output_file}")
-    print(f"[+] Found {matches} cross-reference matches")
-    
-    if input("\nAlso save as CSV? (y/n): ").lower() == 'y':
-        csv_file = output_file.replace('.json', '.csv')
-        save_csv(csv_file, results)
-        print(f"[+] CSV saved to: {csv_file}")
-
-    # Clear sensitive references before returning to menu.
-    api_key_val = None
-    if backend == 'google':
-        api_key = None
-    
-    input("\nPress Enter to continue...")
-
-
-def menu_view_templates():
-    """View available dork templates"""
-    clear_screen()
-    print_header()
-    print("[*] Available Dork Templates")
-    print("-" * 60)
-    for i, template in enumerate(DORK_TEMPLATES, 1):
-        print(f"{i:2d}. {template}")
-    print()
-    input("Press Enter to continue...")
-
-
-def menu_passive_probe():
-    """Menu for passive header/CSP/CORS probing"""
-    clear_screen()
-    print_header()
-    print("[*] Passive Probe (Headers/CSP/CORS)")
-    print("-" * 60)
-
-    mode = input("Input mode: [1] Targets  [2] URLs file: ").strip()
-    urls = []
-
-    if mode == '1':
-        targets = get_multiple_inputs("Enter target domain(s)")
-        if not targets:
-            print("Error: At least one target required")
-            input("\nPress Enter to continue...")
-            return
-        urls = build_target_urls_from_domains(targets)
-    elif mode == '2':
-        urls_file = get_input("Path to URLs file")
-        if not urls_file or not os.path.exists(urls_file):
-            print("Error: URLs file not found")
-            input("\nPress Enter to continue...")
-            return
-        with open(urls_file, 'r', encoding='utf-8') as f:
-            urls = [line.strip() for line in f if line.strip()]
-    else:
-        print("Invalid mode")
-        input("\nPress Enter to continue...")
-        return
-
-    if not urls:
-        print("Error: No URLs to probe")
-        input("\nPress Enter to continue...")
-        return
-
-    ensure_result_folder()
-    output_file = get_input("Output file path", "Result/passive_probe_results.json")
-    csv_file = get_input("CSV output path (optional)", "Result/passive_probe_results.csv")
-    concurrency = int(get_input("Concurrency", str(DEFAULT_CONCURRENCY)))
-    timeout = float(get_input("Timeout (seconds)", str(DEFAULT_TIMEOUT)))
-    test_cors = input("Enable CORS reflection test? (y/n): ").strip().lower() == 'y'
-
-    print(f"\n[*] Probing {len(urls)} URL(s) (concurrency={concurrency})...")
-    results = asyncio.run(
-        run_probes(urls, concurrency=concurrency, timeout=timeout, test_cors=test_cors)
+    from recon_pipeline import (
+        save_csv as save_recon_csv,
+    )
+    from recon_pipeline import (
+        save_json as save_recon_json,
+    )
+    from scope import (  # type: ignore
+        ScopeError,
+        normalize_hostname,
+        normalize_targets,
+        parse_http_url,
+    )
+    from searcher import (  # type: ignore
+        DEFAULT_SEARCH_RESULTS,
+        DEFAULT_WAYBACK_RESULTS,
+        DORK_TEMPLATES,
+        RATE_LIMIT,
+        build_queries,
+        cross_reference_with_subdomains,
+        run_queries,
+        save_csv,
+        save_json,
     )
 
-    save_probe_json(output_file, results)
-    print(f"[+] JSON saved to: {output_file}")
 
-    if csv_file:
-        save_probe_csv(csv_file, results)
-        print(f"[+] CSV saved to: {csv_file}")
+class _Ansi:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    CYAN = "\033[36m"
 
+
+_COLOR_ENABLED = (
+    sys.stdout.isatty()
+    and "NO_COLOR" not in os.environ
+    and os.environ.get("TERM", "").lower() != "dumb"
+)
+if os.name == "nt" and _COLOR_ENABLED:  # enable ANSI processing in modern Windows consoles
+    os.system("")
+
+
+def _paint(text: str, *styles: str) -> str:
+    if not _COLOR_ENABLED:
+        return text
+    return "".join(styles) + text + _Ansi.RESET
+
+
+def _menu_item(number: str, label: str) -> None:
+    marker = _paint(f"[{number}]", _Ansi.BOLD, _Ansi.CYAN)
+    print(f"{marker} {label}")
+
+
+def _success(message: str) -> None:
+    print(_paint(f"[+] {message}", _Ansi.GREEN))
+
+
+def _warning(message: str) -> None:
+    print(_paint(message, _Ansi.YELLOW))
+
+
+def _error(message: str) -> None:
+    print(_paint(message, _Ansi.RED), file=sys.stderr)
+
+
+def clear_screen() -> None:
+    os.system("cls" if os.name == "nt" else "clear")
+
+
+def print_header() -> None:
+    divider = _paint("=" * 68, _Ansi.CYAN)
+    print(divider)
+    print(_paint(" DORK SEARCHER 2.0 - Authorized Reconnaissance by Maydayx2", _Ansi.BOLD))
+    print(divider)
+    print(
+        _paint("Use only on assets you own or have explicit permission to assess.\n", _Ansi.YELLOW)
+    )
+
+
+def ensure_result_folder() -> Path:
+    directory = Path("Result")
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def get_input(prompt: str, default: str | None = None) -> str:
+    suffix = f" [{default}]: " if default is not None else ": "
+    value = input(prompt + suffix).strip()
+    return value if value else (default or "")
+
+
+def get_multiple_inputs(prompt: str) -> list[str]:
+    value = input(f"{prompt} (comma or space separated): ").strip()
+    return [item for item in value.replace(",", " ").split() if item]
+
+
+def get_targets() -> list[str]:
+    values = get_multiple_inputs("Enter authorized target domain(s)")
+    try:
+        return normalize_targets(values)
+    except ScopeError as exc:
+        _error(f"Error: {exc}")
+        return []
+
+
+def get_float(prompt: str, default: float, minimum: float = 0.0, maximum: float = 60.0) -> float:
+    while True:
+        raw = get_input(prompt, str(default))
+        try:
+            value = float(raw)
+            if value < minimum or value > maximum:
+                raise ValueError
+            return value
+        except ValueError:
+            _warning(f"Enter a number between {minimum} and {maximum}.")
+
+
+def get_int(prompt: str, default: int, minimum: int, maximum: int) -> int:
+    while True:
+        raw = get_input(prompt, str(default))
+        try:
+            value = int(raw)
+            if value < minimum or value > maximum:
+                raise ValueError
+            return value
+        except ValueError:
+            _warning(f"Enter a whole number between {minimum} and {maximum}.")
+
+
+def confirm(prompt: str, default: bool = False) -> bool:
+    label = "Y/n" if default else "y/N"
+    answer = input(f"{prompt} [{label}]: ").strip().lower()
+    if not answer:
+        return default
+    return answer in ("y", "yes")
+
+
+def pause() -> None:
     input("\nPress Enter to continue...")
 
 
-def menu_recon_pipeline():
-    """Menu for Wayback recon pipeline"""
+def _write_search_outputs(output_file: str, results: list[dict[str, Any]]) -> None:
+    save_json(output_file, results)
+    _success(f"JSON saved to: {output_file}")
+    if confirm("Also save as CSV?"):
+        csv_file = derived_csv_path(output_file)
+        save_csv(csv_file, results)
+        _success(f"CSV saved to: {csv_file}")
+
+
+def _menu_search(
+    backend: str,
+    title: str,
+    api_key: str | None = None,
+    cse_id: str | None = None,
+) -> None:
     clear_screen()
     print_header()
-    print("[*] Recon Pipeline (Wayback + Parameter Extraction)")
-    print("-" * 60)
-
-    targets = get_multiple_inputs("Enter target domain(s)")
+    print("[*] {}\n{}".format(title, "-" * 68))
+    targets = get_targets()
     if not targets:
-        print("Error: At least one target required")
-        input("\nPress Enter to continue...")
+        pause()
+        return
+    ensure_result_folder()
+    output_file = get_input("Output JSON path", f"Result/{backend}_results.json")
+    rate = get_float("Delay between requests (seconds)", RATE_LIMIT)
+    max_results = get_int("Maximum results per query", DEFAULT_SEARCH_RESULTS, 1, 100)
+    queries = build_queries(targets)
+    results = run_queries(
+        queries,
+        backend,
+        api_key=api_key,
+        cse_id=cse_id,
+        rate_limit=rate,
+        max_results=max_results,
+    )
+    _write_search_outputs(output_file, results)
+    pause()
+
+
+def menu_google_search() -> None:
+    clear_screen()
+    print_header()
+    api_key = getpass.getpass("Google API key (hidden): ").strip()
+    cse_id = get_input("Google CSE ID")
+    if not api_key or not cse_id:
+        print("Error: API key and CSE ID are required.")
+        pause()
+        return
+    _menu_search("google", "Google Programmable Search", api_key=api_key, cse_id=cse_id)
+
+
+def menu_wayback_search() -> None:
+    clear_screen()
+    print_header()
+    print("[*] Wayback CDX URL Collection\n{}".format("-" * 68))
+    targets = get_targets()
+    if not targets:
+        pause()
+        return
+    ensure_result_folder()
+    output_file = get_input("Output JSON path", "Result/wayback_results.json")
+    rate = get_float("Delay between CDX pages (seconds)", 0.25)
+    max_results = get_int("Maximum archived URLs per target", DEFAULT_WAYBACK_RESULTS, 1, 1000000)
+    include_subdomains = confirm("Include subdomains of each target?")
+    results = run_queries(
+        [f"site:{target}" for target in targets],
+        "wayback",
+        rate_limit=rate,
+        max_results=max_results,
+        include_subdomains=include_subdomains,
+    )
+    _write_search_outputs(output_file, results)
+    pause()
+
+
+def menu_duckduckgo_search() -> None:
+    _menu_search("duckduckgo", "DuckDuckGo Search (Primary; Dogpile fallback)")
+
+
+def menu_dogpile_search() -> None:
+    _menu_search("dogpile", "Dogpile Direct Search (diagnostics)")
+
+
+def menu_dnsdumpster_search() -> None:
+    clear_screen()
+    print_header()
+    api_key = getpass.getpass("DNSDumpster API key (hidden): ").strip()
+    if not api_key:
+        print("Error: API key is required.")
+        pause()
+        return
+    targets = get_targets()
+    if not targets:
+        pause()
+        return
+    ensure_result_folder()
+    output_file = get_input("Output JSON path", "Result/dnsdumpster_results.json")
+    rate = get_float("Delay between targets (seconds)", RATE_LIMIT)
+    results = run_queries(
+        [f"site:{target}" for target in targets],
+        "dnsdumpster",
+        api_key=api_key,
+        rate_limit=rate,
+    )
+    _write_search_outputs(output_file, results)
+    pause()
+
+
+def menu_c99_subdomain_search() -> None:
+    clear_screen()
+    print_header()
+    print("[*] Certificate Transparency Discovery\n{}".format("-" * 68))
+    print("Legacy C99 mode now reports only names observed in public CT logs.\n")
+    targets = get_targets()
+    if not targets:
+        pause()
+        return
+    ensure_result_folder()
+    output_file = get_input("Output JSON path", "Result/certificate_transparency.json")
+    rate = get_float("Delay between targets (seconds)", RATE_LIMIT)
+    max_results = get_int("Maximum names per target", 5000, 1, 100000)
+    results = run_queries(
+        [f"site:{target}" for target in targets],
+        "crtsh",
+        rate_limit=rate,
+        max_results=max_results,
+    )
+    _write_search_outputs(output_file, results)
+    pause()
+
+
+def _hosts_from_discovery(rows: Any) -> list[str]:
+    if not isinstance(rows, list):
+        raise ValueError("Discovery JSON must contain a list")
+    hosts: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("result_type") in ("candidate", "error"):
+            continue
+        value = row.get("title") or row.get("url")
+        if not value:
+            continue
+        try:
+            if str(value).startswith(("http://", "https://")):
+                _, host = parse_http_url(str(value))
+            else:
+                host = normalize_hostname(str(value))
+            hosts.append(host)
+        except ScopeError:
+            continue
+    return list(dict.fromkeys(hosts))
+
+
+def menu_cross_reference() -> None:
+    clear_screen()
+    print_header()
+    print("[*] Structural Hostname Cross-Reference\n{}".format("-" * 68))
+    results_file = get_input("Search/Wayback results JSON path")
+    discovery_file = get_input("Observed-host discovery JSON path")
+    try:
+        with open(results_file, encoding="utf-8") as source:
+            result_rows = json.load(source)
+        with open(discovery_file, encoding="utf-8") as source:
+            discovery_rows = json.load(source)
+        if not isinstance(result_rows, list):
+            raise ValueError("Results JSON must contain a list")
+        hosts = _hosts_from_discovery(discovery_rows)
+        urls = [
+            str(row.get("url")) for row in result_rows if isinstance(row, dict) and row.get("url")
+        ]
+        matches = cross_reference_with_subdomains(urls, hosts)
+        output_rows = [
+            {
+                "query": "cross_reference",
+                "title": match["subdomain"],
+                "url": match["url"],
+                "snippet": match["match_type"],
+                "source": "cross_reference",
+                "result_type": "observed",
+                "verified": False,
+                "error": "",
+            }
+            for match in matches
+        ]
+        ensure_result_folder()
+        output_file = get_input("Output JSON path", "Result/cross_reference.json")
+        _write_search_outputs(output_file, output_rows)
+        _success(f"{len(output_rows)} structural hostname match(es)")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        _error(f"Error: {exc}")
+    pause()
+
+
+def menu_view_templates() -> None:
+    clear_screen()
+    print_header()
+    for index, template in enumerate(DORK_TEMPLATES, 1):
+        print(f"{index:2d}. {template}")
+    pause()
+
+
+def menu_passive_probe() -> None:
+    clear_screen()
+    print_header()
+    print("[*] Active HTTP Metadata / Header / CORS Probe\n{}".format("-" * 68))
+    print("This sends GET requests but does not download response bodies.")
+    if not confirm("I confirm every target is explicitly authorized"):
+        print("Probe cancelled.")
+        pause()
+        return
+
+    mode = get_input("Input mode: [1] targets  [2] URL file", "1")
+    allowed_targets: list[str] | None = None
+    if mode == "1":
+        targets = get_targets()
+        if not targets:
+            pause()
+            return
+        urls = build_target_urls_from_domains(targets)
+        allowed_targets = targets
+    elif mode == "2":
+        urls_file = get_input("Authorized URL file path")
+        with open(urls_file, encoding="utf-8") as source:
+            urls = [
+                line.strip()
+                for line in source
+                if line.strip() and not line.lstrip().startswith("#")
+            ]
+    else:
+        print("Invalid mode.")
+        pause()
         return
 
     ensure_result_folder()
-    output_file = get_input("Output file path", "Result/recon_pipeline_report.json")
-    csv_file = get_input("CSV output path (optional)", "Result/recon_pipeline_report.csv")
-    rate = float(get_input("Rate limit (seconds)", str(RECON_RATE)))
+    output_file = get_input("Output JSON path", "Result/http_probe_results.json")
+    csv_file = get_input("CSV output path", derived_csv_path(output_file))
+    ensure_distinct_paths(output_file, csv_file)
+    concurrency = get_int("Concurrency", DEFAULT_CONCURRENCY, 1, MAX_CONCURRENCY)
+    timeout = get_float("Timeout (seconds)", DEFAULT_TIMEOUT, 0.1, 120.0)
+    max_redirects = get_int("Maximum in-scope redirects", DEFAULT_MAX_REDIRECTS, 0, 10)
+    allow_subdomains = confirm("Allow redirects to child subdomains?")
+    allow_private = confirm("Allow private/local IP destinations? (owned labs only)")
+    test_cors = confirm("Send an Origin header for CORS analysis?")
+    origin = (
+        get_input("CORS test Origin", "https://example.com") if test_cors else "https://example.com"
+    )
 
-    print(f"\n[*] Running Wayback recon for {len(targets)} target(s)...")
-    report = summarize_targets(targets, rate=rate)
+    results = asyncio.run(
+        run_probes(
+            urls,
+            concurrency=concurrency,
+            timeout=timeout,
+            test_cors=test_cors,
+            origin=origin,
+            allowed_targets=allowed_targets,
+            allow_subdomains=allow_subdomains,
+            allow_private=allow_private,
+            max_redirects=max_redirects,
+        )
+    )
+    save_probe_json(output_file, results)
+    _success(f"JSON saved to: {output_file}")
+    if csv_file:
+        save_probe_csv(csv_file, results)
+        _success(f"CSV saved to: {csv_file}")
+    pause()
 
+
+def menu_recon_pipeline() -> None:
+    clear_screen()
+    print_header()
+    print("[*] Wayback Recon + Parameter Inventory\n{}".format("-" * 68))
+    targets = get_targets()
+    if not targets:
+        pause()
+        return
+    ensure_result_folder()
+    output_file = get_input("Output JSON path", "Result/recon_pipeline_report.json")
+    csv_file = get_input("CSV output path", derived_csv_path(output_file))
+    ensure_distinct_paths(output_file, csv_file)
+    rate = get_float("Delay between CDX requests (seconds)", RECON_RATE)
+    max_urls = get_int("Maximum archived URLs per target", DEFAULT_MAX_URLS, 1, 1000000)
+    include_subdomains = confirm("Include subdomains?")
+    include_sensitive = confirm("Include token-like archived parameter values? (unsafe)")
+    report = summarize_targets(
+        targets,
+        rate=rate,
+        max_urls=max_urls,
+        include_subdomains=include_subdomains,
+        include_sensitive_values=include_sensitive,
+    )
     save_recon_json(output_file, report)
-    print(f"[+] JSON saved to: {output_file}")
-
+    _success(f"JSON saved to: {output_file}")
     if csv_file:
         save_recon_csv(csv_file, report)
-        print(f"[+] CSV saved to: {csv_file}")
+        _success(f"CSV saved to: {csv_file}")
+    pause()
 
-    input("\nPress Enter to continue...")
 
-
-def main_menu():
-    """Main menu loop"""
+def main_menu() -> None:
+    actions: dict[str, Callable[[], None]] = {
+        "1": menu_google_search,
+        "2": menu_wayback_search,
+        "3": menu_duckduckgo_search,
+        "4": menu_dogpile_search,
+        "5": menu_c99_subdomain_search,
+        "6": menu_dnsdumpster_search,
+        "7": menu_cross_reference,
+        "8": menu_recon_pipeline,
+        "9": menu_passive_probe,
+        "10": menu_view_templates,
+    }
     while True:
         clear_screen()
         print_header()
-        print("[1] Google CSE Search")
-        print("[2] Wayback Machine (CDX) Search")
-        print("[3] DuckDuckGo Search")
-        print("[4] Dogpile Search")
-        print("[5] C99.nl Subdomain Finder")
-        print("[6] DNSDumpster Search")
-        print("[7] Cross-Reference Results")
-        print("[8] Recon Pipeline (Wayback + Params)")
-        print("[9] Passive Probe (Headers/CSP/CORS)")
-        print("[10] View Dork Templates")
-        print("[0] Exit")
-        print()
-        
-        choice = input("Select an option (0-10): ").strip()
-        
-        if choice == '1':
-            menu_google_search()
-        elif choice == '2':
-            menu_wayback_search()
-        elif choice == '3':
-            menu_duckduckgo_search()
-        elif choice == '4':
-            menu_dogpile_search()
-        elif choice == '5':
-            menu_c99_subdomain_search()
-        elif choice == '6':
-            menu_dnsdumpster_search()
-        elif choice == '7':
-            menu_cross_reference()
-        elif choice == '8':
-            menu_recon_pipeline()
-        elif choice == '9':
-            menu_passive_probe()
-        elif choice == '10':
-            menu_view_templates()
-        elif choice == '0':
-            print("\n[*] Exiting Dork Searcher. Goodbye!")
-            sys.exit(0)
-        else:
-            print("Invalid option. Please try again.")
-            input("Press Enter to continue...")
+        _menu_item("1", "Google Programmable Search")
+        _menu_item("2", "Wayback CDX URL Collection")
+        _menu_item("3", "DuckDuckGo Search (Primary; Dogpile fallback)")
+        _menu_item("4", "Dogpile Direct Search (diagnostics)")
+        _menu_item("5", "Certificate Transparency Discovery")
+        _menu_item("6", "DNSDumpster Discovery")
+        _menu_item("7", "Cross-Reference Existing Results")
+        _menu_item("8", "Wayback Recon + Parameter Inventory")
+        _menu_item("9", "Active HTTP Header/CORS Probe")
+        _menu_item("10", "View Dork Templates")
+        _menu_item("0", "Exit")
+        choice = input(_paint("\nSelect an option: ", _Ansi.CYAN)).strip()
+        if choice == "0":
+            return
+        action = actions.get(choice)
+        if not action:
+            _error("Invalid option.")
+            pause()
+            continue
+        try:
+            action()
+        except KeyboardInterrupt:
+            _warning("\nOperation cancelled.")
+            pause()
+        except Exception as exc:
+            _error(f"\n[!] Operation failed: {exc}")
+            pause()
 
 
-def main():
-    """Entry point"""
+def main() -> int:
     try:
         main_menu()
+        return 0
     except KeyboardInterrupt:
-        print("\n\n[*] Interrupted by user. Exiting...")
-        sys.exit(0)
-    except Exception as e:
-        print(f"\n[!] Error: {e}")
-        sys.exit(1)
+        _warning("\nExiting.")
+        return 130
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    sys.exit(main())

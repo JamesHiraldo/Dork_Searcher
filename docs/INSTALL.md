@@ -1,186 +1,42 @@
-# Installation & Usage Guide
+# Installation
 
-This guide is updated for the current menu and workflow.
+## Supported environment
 
-## Prerequisites
+- Python 3.10 through 3.13
+- Windows, Linux, or macOS
+- Internet access to the selected third-party APIs
 
-- Python 3.8+ (if installing from source)
-- Internet access for external APIs (Google CSE, Wayback, DuckDuckGo, etc.)
-- Playwright Chromium browser binary for Dogpile fallback rendering (`python -m playwright install chromium`)
-
-## Quick Start: Windows Executable (No Python Required)
-
-The easiest way for Windows users - **no Python installation needed!**
-
-### Download & Run
-
-1. **Download** `dork_searcher.exe` from the `dist/` folder
-2. **Double-click** to launch the application
-3. The interactive menu will appear in a command window
-
-### Setup Instructions for End Users
-
-**For Users Receiving the Executable:**
-
-1. **Download** the `dork_searcher.exe` file from your distributor
-2. **Create a folder** anywhere on your computer (e.g., `C:\Tools\dork_searcher\`)
-3. **Place `dork_searcher.exe`** in that folder
-4. **Double-click** the executable to run
-5. Select options from the interactive menu
-
-**Optional: Create a Desktop Shortcut**
-- Right-click `dork_searcher.exe`
-- Select "Create shortcut" or "Send to → Desktop (create shortcut)"
-- You can now launch from your desktop
-
-**Optional: Add to Windows Context Menu**
-- Right-click `dork_searcher.exe` → Properties → Advanced
-- Check "Run as administrator" if needed
-
-### Running from Command Line (Windows)
+## Source installation
 
 ```powershell
-# Navigate to the folder containing the exe
-cd "C:\Tools\dork_searcher"
-
-# Run the executable
-.\dork_searcher.exe
-
-# Or just double-click it
-```
-
-### Troubleshooting the Executable
-
-| Issue | Solution |
-|-------|----------|
-| "Windows protected your PC" warning | Click "More info" → "Run anyway" (this is normal for unsigned executables) |
-| API key not accepting input | Use copy-paste instead of typing directly |
-| No output displayed | Try running from Command Prompt instead of PowerShell |
-| "File not found" errors | Ensure the exe is in a permanent location, not Temp folder |
-
----
-
-## Recommended Install (Virtual Environment)
-
-### Windows (PowerShell)
-
-```powershell
-cd "path\to\dork_searcher"
+git clone https://github.com/Maydayx2/dork-searcher.git
+cd dork-searcher
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -r config/requirements.txt
-python -m playwright install chromium
-pip install -e .
+python -m pip install -e "."
+dork_searcher
 ```
 
-Run:
+For development, install `.[dev]`. For the optional browser fallback, install
+`.[browser]` and then run `python -m playwright install chromium`.
+
+## Build a Windows executable
 
 ```powershell
-dork_searcher
+python -m pip install -e ".[build]"
+python -m PyInstaller --clean --noconfirm config\dork_searcher.spec
 ```
 
-### Linux / macOS
-
-```bash
-cd /path/to/dork_searcher
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r config/requirements.txt
-python -m playwright install chromium
-pip install -e .
-```
-
-Run:
-
-```bash
-dork_searcher
-```
-
-## Quick Run Without Install
-
-From the project folder:
-
-```bash
-python -m src.cli
-```
-
-## Current Menu Options
-
-1. Google CSE Search
-2. Wayback Machine (CDX) Search
-3. DuckDuckGo Search
-4. Dogpile Search
-5. C99.nl Subdomain Finder
-6. DNSDumpster Search
-7. Cross-Reference Results
-8. Recon Pipeline (Wayback + Params)
-9. Passive Probe (Headers/CSP/CORS)
-10. View Dork Templates
-0. Exit
-
-## API Keys
-
-### Google CSE
-
-Required only for option 1 and Google-based cross-reference mode in option 7.
-
-- Create engine: https://programmablesearchengine.google.com/
-- Create API key in Google Cloud
-- Provide API Key and CSE ID when prompted
-
-### DNSDumpster
-
-Required for option 6.
-
-- Create or use a DNSDumpster account
-- Provide the DNSDumpster API key when prompted
-- The key is sent via the documented `X-API-Key` header
-
-### Key Handling
-
-- In the interactive menu, API key input is hidden.
-- The app redacts secrets from error messages.
-- Avoid passing `--api-key` directly in shell history if you want maximum key privacy.
-
-## Output Files
-
-- JSON output is always supported.
-- CSV output is optional for most menu options.
-- Files are written to the current working directory unless you provide an absolute path.
+Rebuild the executable for every release and publish a SHA-256 checksum. Playwright
+browser binaries are intentionally not bundled by the base specification; the
+DuckDuckGo-first path still has its built-in Dogpile fallback without them.
 
 ## Troubleshooting
 
-### `ModuleNotFoundError` (for example: `requests` or `httpx`)
-
-```bash
-pip install -r config/requirements.txt
-```
-
-If using a virtual environment, make sure it is activated first.
-
-### `dork_searcher` command not found
-
-Install entry point in current environment:
-
-```bash
-pip install -e .
-```
-
-Or run directly with:
-
-```bash
-python -m src.cli
-```
-
-### API / network errors
-
-- Check internet connectivity
-- Increase rate delay in menu prompts
-- Verify Google API key and CSE ID for Google mode
-- If Dogpile only returns a loading shell, the app automatically falls back to browser-rendered Brave results
-
-## Optional Windows Batch Wrapper
-
-If needed, use the included `dork_searcher.bat` from this project, or create your own wrapper in a folder on PATH.
+- If `python` is not found, install Python 3.10+ and enable “Add Python to PATH.”
+- Virtual environments are machine-specific. Delete and recreate a broken local
+  environment rather than copying `.venv` between systems.
+- A backend error row means the service failed or rate-limited the request; it is
+  not equivalent to zero findings.
+- Active probing requires `--acknowledge-scope` outside the interactive menu.

@@ -1,8 +1,23 @@
 @echo off
-REM Dork Searcher - Command Line Wrapper
-REM This batch file always runs the current CLI module from the repository root.
-REM Place this file in a folder that's in your PATH (e.g., C:\Windows\System32)
-
+setlocal
 pushd "%~dp0"
-python -m src.cli %*
+
+where python >nul 2>nul
+if not errorlevel 1 (
+    python -m src.cli %*
+    set "DORK_EXIT=%ERRORLEVEL%"
+    popd
+    exit /b %DORK_EXIT%
+)
+
+where py >nul 2>nul
+if not errorlevel 1 (
+    py -3 -m src.cli %*
+    set "DORK_EXIT=%ERRORLEVEL%"
+    popd
+    exit /b %DORK_EXIT%
+)
+
+echo Python 3.10 or newer was not found on PATH.
 popd
+exit /b 1
