@@ -18,8 +18,9 @@ python -m pip install -e "."
 dork_searcher
 ```
 
-For development, install `.[dev]`. For the optional browser fallback, install
-`.[browser]` and then run `python -m playwright install chromium`.
+For development, install `.[dev]`. Playwright is installed as a core dependency and
+prefers Microsoft Edge or Google Chrome. Run `python -m playwright install chromium`
+only when neither browser is installed.
 
 ## Build a Windows executable
 
@@ -28,9 +29,9 @@ python -m pip install -e ".[build]"
 python -m PyInstaller --clean --noconfirm config\dork_searcher.spec
 ```
 
-Rebuild the executable for every release and publish a SHA-256 checksum. Playwright
-browser binaries are intentionally not bundled by the base specification; the
-DuckDuckGo-first path still has its built-in Dogpile fallback without them.
+Rebuild the executable for every release and publish a SHA-256 checksum. The build
+bundles Playwright's control runtime, uses the system-installed Edge browser for
+rendered DuckDuckGo recovery, and retains Dogpile as the secondary provider.
 
 ## Troubleshooting
 
@@ -39,4 +40,6 @@ DuckDuckGo-first path still has its built-in Dogpile fallback without them.
   environment rather than copying `.venv` between systems.
 - A backend error row means the service failed or rate-limited the request; it is
   not equivalent to zero findings.
+- Dogpile can return HTTP 403 from its own CloudFront distribution. The tool checks
+  both known result routes and reports that provider outage explicitly.
 - Active probing requires `--acknowledge-scope` outside the interactive menu.

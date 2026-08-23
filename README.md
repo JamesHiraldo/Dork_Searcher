@@ -33,8 +33,9 @@ one interactive Windows application and a set of scriptable Python commands.
 ## Highlights
 
 - Google Programmable Search with API-side site restriction and pagination
-- DuckDuckGo-first HTML search with Dogpile and optional Brave fallbacks
-- Direct Dogpile mode for backend diagnostics
+- DuckDuckGo-first search with rendered-page recovery, Dogpile fallback, and a
+  browser-rendered Brave last resort
+- Direct Dogpile diagnostics across both of its known result routes
 - Persistent custom dorks that remain tied to the selected target
 - Wayback CDX collection with retry handling and resumption-key pagination
 - Archived endpoint and parameter inventory with sensitive-value redaction
@@ -117,10 +118,10 @@ Compare the executable hash with the value published for the release:
 Get-FileHash .\dork_searcher-2.0.0.exe -Algorithm SHA256
 ```
 
-The restored 2.0.0 executable currently has this SHA-256 value:
+The current 2.0.0 executable has this SHA-256 value:
 
 ```text
-5DEF0AB48F29A8D63F5A75B24E44F18229A8590E3E50F8825618F35147217385
+F611301D374B476D3B37F1A9C5EC73308CDC460BEA76724EF41A5092DCC41A2C
 ```
 
 ## Install from source
@@ -165,17 +166,19 @@ dork_searcher
 
 To install development tools, use `python -m pip install -e ".[dev]"`.
 
-### Optional Brave browser fallback
+### Browser support for resilient search
 
-DuckDuckGo falls back to Dogpile automatically. A final browser-rendered Brave
-fallback can be enabled in a source installation:
+Playwright is installed with the project. When DuckDuckGo blocks its lightweight
+HTML endpoint, Dork Searcher renders the current result page in Microsoft Edge or
+Google Chrome before falling back to Dogpile. Most Windows systems already have Edge.
+On a system without either browser, install Playwright Chromium once:
 
 ```powershell
-python -m pip install -e ".[browser]"
 python -m playwright install chromium
 ```
 
-Playwright and Chromium are intentionally not bundled in the base Windows executable.
+The Windows executable includes the browser-control runtime and uses the installed
+Edge browser; it does not bundle a second full browser.
 
 ## Output files
 
@@ -312,7 +315,10 @@ http-metadata-probe (--targets DOMAIN [...] | --urls-file FILE) \
 ### DuckDuckGo search
 
 DuckDuckGo is the primary provider for this backend. Empty or blocked results fall
-back to Dogpile and then to Brave when the optional browser dependencies are present.
+through to a browser-rendered DuckDuckGo page and then Dogpile, with Brave used only
+as a final browser-rendered rescue provider. Dogpile direct mode also tests both
+`/search` and `/serp`; an HTTP 403 from both is reported as an upstream Dogpile/
+CloudFront failure rather than as an empty result set.
 
 ```cmd
 dork-search --backend duckduckgo --targets example.com --max-results 30 ^

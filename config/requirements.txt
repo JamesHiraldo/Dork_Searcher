@@ -1,3 +1,3 @@
 requests>=2.32.4,<3
 httpx>=0.27,<1
-# Optional browser fallback: pip install -e ".[browser]"
+playwright>=1.54,<2

@@ -23,8 +23,9 @@ Cross-referencing parses DNS hostnames. It never uses substring matching.
 ## Capabilities
 
 - Google Programmable Search with site restriction and pagination (maximum 100)
-- DuckDuckGo-first search with automatic Dogpile and optional Brave fallbacks
-- Direct Dogpile mode for provider diagnostics
+- DuckDuckGo-first search with rendered-page recovery, Dogpile fallback, and a
+  browser-rendered Brave last resort
+- Direct Dogpile diagnostics across both known result routes
 - Wayback CDX HTTPS collection with retries and resumption-key pagination
 - Parameter and endpoint inventory with sensitive-value redaction by default
 - Passive subdomain enumeration that merges `crt.sh` and Cert Spotter observations
@@ -44,15 +45,15 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 
-The optional browser-rendered Brave fallback requires:
+Playwright is a core dependency. Search rendering prefers an installed Microsoft Edge
+or Google Chrome. If neither is available, install Playwright Chromium once:
 
 ```powershell
-python -m pip install -e ".[browser]"
 python -m playwright install chromium
 ```
 
-The core Google, DuckDuckGo, Wayback, CT, DNSDumpster, and HTTP-probe paths do not
-require Playwright.
+The Windows executable uses the installed Edge browser and does not require a separate
+Chromium download.
 
 The interactive menu uses terminal-safe ANSI colors when supported. Set `NO_COLOR=1`
 to disable them; redirected output is always left uncolored.

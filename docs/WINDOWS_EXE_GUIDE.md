@@ -19,8 +19,11 @@ DNSDumpster, cross-reference, archive analysis, and active HTTP metadata workflo
 Google and DNSDumpster require API credentials. Key input is hidden.
 
 DuckDuckGo is the primary web-search provider and automatically falls back to
-Dogpile. The browser-rendered Brave final fallback is not bundled in the base
-executable. All other core workflows remain available without a browser installation.
+its current browser-rendered result page and then Dogpile. The executable includes
+the browser-control runtime and uses Microsoft Edge installed with Windows. Dogpile
+direct mode checks both known result routes and reports an upstream HTTP 403 instead
+of treating it as an empty search. Brave is retained as a final browser-rendered
+rescue provider after the DuckDuckGo and Dogpile paths are exhausted.
 
 The interactive menu uses color in supported terminals. Set `NO_COLOR=1` before
 launching to force plain output.

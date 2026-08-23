@@ -19,6 +19,7 @@ import sys
 import time
 import urllib.parse
 from collections.abc import Iterable
+from contextlib import suppress
 from html.parser import HTMLParser
 from typing import Any
 
@@ -69,6 +70,11 @@ DORK_TEMPLATES = [
 RATE_LIMIT = 1.0
 DEFAULT_SEARCH_RESULTS = 30
 DEFAULT_WAYBACK_RESULTS = 50000
+SEARCH_BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0"
+)
 RESULT_FIELDS = [
     "query",
     "title",
@@ -121,6 +127,9 @@ def _get_with_retries(
             return response
         except requests.RequestException as exc:
             last_error = exc
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status is not None and status != 429 and status < 500:
+                raise SearchBackendError(f"GET {url} failed with HTTP {status}") from exc
             if attempt + 1 < retries:
                 time.sleep(backoff * (2**attempt))
     raise SearchBackendError(f"GET {url} failed after {retries} attempts: {last_error}")
@@ -293,7 +302,7 @@ def _search_duckduckgo_html(
         "https://html.duckduckgo.com/html/",
         params={"q": query},
         timeout=25,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; dork-searcher/2.0)"},
+        headers={"User-Agent": SEARCH_BROWSER_USER_AGENT},
     )
     parser = _DuckDuckGoParser()
     parser.feed(response.text)
@@ -313,6 +322,141 @@ def _search_duckduckgo_html(
     return _dedupe_results(results, num)
 
 
+def _rendered_results(
+    items: Iterable[dict[str, Any]],
+    *,
+    query: str,
+    source: str,
+    blocked_hosts: Iterable[str],
+    num: int,
+) -> list[dict[str, Any]]:
+    """Validate, scope, and deduplicate browser-extracted search results."""
+    target = _query_target(query)
+    excluded = tuple(blocked_hosts)
+    results: list[dict[str, Any]] = []
+    for item in items:
+        url = str(item.get("href") or "").strip()
+        try:
+            _, host = parse_http_url(url)
+        except ScopeError:
+            continue
+        if any(host == name or host.endswith(f".{name}") for name in excluded):
+            continue
+        if target and not host_in_scope(host, target, include_subdomains=True):
+            continue
+        title = str(item.get("title") or "").strip() or host
+        snippet = str(item.get("snippet") or "").strip()
+        results.append(_result(url, title, snippet, source))
+    return _dedupe_results(results, num)
+
+
+async def _launch_search_browser(playwright: Any) -> Any:
+    """Launch an installed browser, preferring Edge on supported desktops."""
+    failures: list[str] = []
+    candidates: tuple[tuple[str, dict[str, str]], ...] = (
+        ("Microsoft Edge", {"channel": "msedge"}),
+        ("Google Chrome", {"channel": "chrome"}),
+        ("Playwright Chromium", {}),
+    )
+    for label, options in candidates:
+        try:
+            return await playwright.chromium.launch(headless=True, **options)
+        except Exception as exc:
+            failures.append(f"{label}: {safe_error_message(exc, [])}")
+    detail = "; ".join(failures)
+    raise SearchBackendError(
+        "No supported search browser could be launched. Install Microsoft Edge, "
+        "Google Chrome, or run 'python -m playwright install chromium'. "
+        f"Browser details: {detail}"
+    )
+
+
+def _search_duckduckgo_browser(
+    query: str,
+    num: int = DEFAULT_SEARCH_RESULTS,
+) -> list[dict[str, Any]]:
+    """Render DuckDuckGo's current JavaScript result page in an installed browser."""
+    try:
+        from playwright.async_api import async_playwright  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise SearchBackendError(
+            "DuckDuckGo blocked its HTML endpoint and browser support is unavailable. "
+            "Install this project with its browser dependency."
+        ) from exc
+
+    async def _fetch_results() -> list[dict[str, Any]]:
+        async with async_playwright() as playwright:
+            browser = await _launch_search_browser(playwright)
+            try:
+                context = await browser.new_context(
+                    user_agent=SEARCH_BROWSER_USER_AGENT,
+                    locale="en-US",
+                    viewport={"width": 1365, "height": 900},
+                )
+                page = await context.new_page()
+                search_url = (
+                    "https://duckduckgo.com/?q=" + urllib.parse.quote_plus(query) + "&ia=web"
+                )
+                response = await page.goto(
+                    search_url,
+                    wait_until="domcontentloaded",
+                    timeout=30000,
+                )
+                if response is not None and response.status >= 400:
+                    raise SearchBackendError(
+                        f"DuckDuckGo browser search returned HTTP {response.status}"
+                    )
+                with suppress(Exception):
+                    await page.wait_for_selector(
+                        'article[data-testid="result"]',
+                        timeout=15000,
+                    )
+                body_text = (await page.locator("body").inner_text()).lower()
+                blocked_markers = (
+                    "unfortunately, bots use duckduckgo too",
+                    "anomaly-modal",
+                    "please complete the following challenge",
+                )
+                if any(marker in body_text for marker in blocked_markers):
+                    raise SearchBackendError("DuckDuckGo displayed an automated-request challenge")
+                cards = await page.locator('article[data-testid="result"]').evaluate_all(
+                    """
+                    (elements) => elements.map((card) => {
+                        const link = card.querySelector('a[data-testid="result-title-a"]');
+                        const snippet = card.querySelector('[data-result="snippet"]');
+                        return {
+                            href: link ? link.href : '',
+                            title: link ? (link.textContent || '').trim() : '',
+                            snippet: snippet ? (snippet.textContent || '').trim() : ''
+                        };
+                    })
+                    """
+                )
+                results = _rendered_results(
+                    cards,
+                    query=query,
+                    source="duckduckgo_browser",
+                    blocked_hosts=("duckduckgo.com",),
+                    num=num,
+                )
+                if not results and "no results found" not in body_text:
+                    raise SearchBackendError(
+                        "DuckDuckGo rendered a page but no recognizable organic results"
+                    )
+                return results
+            finally:
+                await browser.close()
+
+    try:
+        return asyncio.run(_fetch_results())
+    except SearchBackendError:
+        raise
+    except Exception as exc:
+        raise SearchBackendError(
+            f"DuckDuckGo browser search failed: {safe_error_message(exc, [])}"
+        ) from exc
+
+
 def search_brave_web(query: str, num: int = 10) -> list[dict[str, Any]]:
     """Render Brave Search in a headless browser as an optional fallback."""
     try:
@@ -325,9 +469,9 @@ def search_brave_web(query: str, num: int = 10) -> list[dict[str, Any]]:
     async def _fetch_results() -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=True)
+            browser = await _launch_search_browser(playwright)
             try:
-                page = await browser.new_page(user_agent="Mozilla/5.0")
+                page = await browser.new_page(user_agent=SEARCH_BROWSER_USER_AGENT)
                 search_url = "https://search.brave.com/search?source=web&q=" + urllib.parse.quote(
                     query
                 )
@@ -361,41 +505,158 @@ def search_brave_web(query: str, num: int = 10) -> list[dict[str, Any]]:
         return []
 
 
+def _search_dogpile_browser(
+    query: str,
+    num: int = DEFAULT_SEARCH_RESULTS,
+) -> list[dict[str, Any]]:
+    """Render Dogpile when its result endpoint allows browser access."""
+    try:
+        from playwright.async_api import async_playwright  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise SearchBackendError(
+            "Dogpile's HTTP endpoint failed and browser support is unavailable. "
+            "Install this project with its browser dependency."
+        ) from exc
+
+    async def _fetch_results() -> list[dict[str, Any]]:
+        async with async_playwright() as playwright:
+            browser = await _launch_search_browser(playwright)
+            try:
+                context = await browser.new_context(
+                    user_agent=SEARCH_BROWSER_USER_AGENT,
+                    locale="en-US",
+                    viewport={"width": 1365, "height": 900},
+                )
+                page = await context.new_page()
+                route_errors: list[str] = []
+                routes = (
+                    "https://www.dogpile.com/search?q="
+                    + urllib.parse.quote_plus(query)
+                    + "&origin=funnel_home_website",
+                    "https://www.dogpile.com/serp?q=" + urllib.parse.quote_plus(query),
+                )
+                for search_url in routes:
+                    response = await page.goto(
+                        search_url,
+                        wait_until="domcontentloaded",
+                        timeout=30000,
+                    )
+                    if response is not None and response.status == 403:
+                        route_errors.append(f"{urllib.parse.urlsplit(search_url).path}=HTTP 403")
+                        continue
+                    if response is not None and response.status >= 400:
+                        route_errors.append(
+                            f"{urllib.parse.urlsplit(search_url).path}=HTTP {response.status}"
+                        )
+                        continue
+                    await page.wait_for_timeout(2500)
+                    body_text = (await page.locator("body").inner_text()).lower()
+                    if (
+                        "the request could not be satisfied" in body_text
+                        and "cloudfront" in body_text
+                    ):
+                        route_errors.append(
+                            f"{urllib.parse.urlsplit(search_url).path}=CloudFront rejection"
+                        )
+                        continue
+                    anchors = await page.locator("main a[href]").evaluate_all(
+                        r"""
+                        (elements) => elements.map((link) => ({
+                            href: link.href || '',
+                            title: (link.textContent || '').replace(/\s+/g, ' ').trim(),
+                            snippet: ''
+                        }))
+                        """
+                    )
+                    results = _rendered_results(
+                        anchors,
+                        query=query,
+                        source="dogpile_browser",
+                        blocked_hosts=("dogpile.com",),
+                        num=num,
+                    )
+                    if results or "no results" in body_text:
+                        return results
+                    route_errors.append(
+                        f"{urllib.parse.urlsplit(search_url).path}=unrecognized result page"
+                    )
+                raise SearchBackendError(
+                    "Dogpile denied both result routes; this is an upstream "
+                    "Dogpile/CloudFront failure (" + "; ".join(route_errors) + ")"
+                )
+            finally:
+                await browser.close()
+
+    try:
+        return asyncio.run(_fetch_results())
+    except SearchBackendError:
+        raise
+    except Exception as exc:
+        raise SearchBackendError(
+            f"Dogpile browser search failed: {safe_error_message(exc, [])}"
+        ) from exc
+
+
 def search_dogpile(
     query: str,
     num: int = DEFAULT_SEARCH_RESULTS,
     session: requests.Session | None = None,
 ) -> list[dict[str, Any]]:
-    """Query Dogpile directly as the secondary HTML search provider."""
+    """Query Dogpile directly, then render its result page when necessary."""
     if num < 1:
         return []
     client = session or requests.Session()
-    response = _get_with_retries(
-        client,
-        "https://www.dogpile.com/search",
-        params={"q": query},
-        timeout=25,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; dork-searcher/2.0)"},
-    )
-    target = _query_target(query)
-    results: list[dict[str, Any]] = []
-    for match in re.finditer(
-        r'<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>',
-        response.text,
-        re.IGNORECASE | re.DOTALL,
-    ):
-        url = html.unescape(match.group(1)).strip()
-        title = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.unescape(match.group(2)))).strip()
+    provider_errors: list[str] = []
+    for endpoint in ("https://www.dogpile.com/search", "https://www.dogpile.com/serp"):
         try:
-            _, host = parse_http_url(url)
-        except ScopeError:
-            continue
-        if "dogpile.com" in host:
-            continue
-        if target and not host_in_scope(host, target, include_subdomains=True):
-            continue
-        results.append(_result(url, title or host, "", "dogpile_html"))
-    return _dedupe_results(results, num)
+            response = _get_with_retries(
+                client,
+                endpoint,
+                params={"q": query},
+                timeout=25,
+                headers={"User-Agent": SEARCH_BROWSER_USER_AGENT},
+            )
+            direct_items: list[dict[str, str]] = []
+            for match in re.finditer(
+                r'<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>',
+                response.text,
+                re.IGNORECASE | re.DOTALL,
+            ):
+                direct_items.append(
+                    {
+                        "href": html.unescape(match.group(1)).strip(),
+                        "title": re.sub(
+                            r"\s+",
+                            " ",
+                            re.sub(r"<[^>]+>", " ", html.unescape(match.group(2))),
+                        ).strip(),
+                        "snippet": "",
+                    }
+                )
+            results = _rendered_results(
+                direct_items,
+                query=query,
+                source="dogpile_html",
+                blocked_hosts=("dogpile.com",),
+                num=num,
+            )
+            if results:
+                return results
+            if "no results" in response.text.lower():
+                return []
+            provider_errors.append(
+                f"{urllib.parse.urlsplit(endpoint).path}=unrecognized result page"
+            )
+        except (requests.RequestException, SearchBackendError, ValueError) as exc:
+            provider_errors.append(
+                f"{urllib.parse.urlsplit(endpoint).path}={safe_error_message(exc, [])}"
+            )
+
+    try:
+        return _search_dogpile_browser(query, num=num)
+    except SearchBackendError as exc:
+        provider_errors.append(safe_error_message(exc, []))
+    raise SearchBackendError("Dogpile search failed: " + "; ".join(provider_errors))
 
 
 def search_duckduckgo(
@@ -415,6 +676,13 @@ def search_duckduckgo(
             return results
     except (requests.RequestException, SearchBackendError, ValueError) as exc:
         provider_errors.append(f"DuckDuckGo={exc}")
+
+    try:
+        results = _search_duckduckgo_browser(query, num=num)
+        if results:
+            return results
+    except SearchBackendError as exc:
+        provider_errors.append(f"DuckDuckGo browser={exc}")
 
     try:
         results = search_dogpile(query, num=num, session=client)

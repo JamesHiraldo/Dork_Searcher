@@ -113,6 +113,10 @@ def test_duckduckgo_falls_back_to_dogpile(monkeypatch):
         "verified": False,
     }
     monkeypatch.setattr(
+        "src.searcher._search_duckduckgo_browser",
+        lambda query, num: [],
+    )
+    monkeypatch.setattr(
         "src.searcher.search_dogpile",
         lambda query, num, session: [dogpile_result],
     )
@@ -124,6 +128,28 @@ def test_duckduckgo_falls_back_to_dogpile(monkeypatch):
     assert search_duckduckgo("site:example.com test", session=session) == [dogpile_result]
 
 
+def test_duckduckgo_uses_rendered_results_before_dogpile(monkeypatch):
+    session = FakeSession([FakeResponse(text="<html>Automated request challenge</html>")])
+    browser_result = {
+        "title": "Rendered",
+        "url": "https://example.com/rendered",
+        "snippet": "Current result",
+        "source": "duckduckgo_browser",
+        "result_type": "observed",
+        "verified": False,
+    }
+    monkeypatch.setattr(
+        "src.searcher._search_duckduckgo_browser",
+        lambda query, num: [browser_result],
+    )
+    monkeypatch.setattr(
+        "src.searcher.search_dogpile",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Dogpile should not run")),
+    )
+
+    assert search_duckduckgo("site:example.com test", session=session) == [browser_result]
+
+
 def test_direct_dogpile_does_not_recurse_to_duckduckgo(monkeypatch):
     session = FakeSession([FakeResponse(text="<html>No results</html>")])
     monkeypatch.setattr(
@@ -132,6 +158,46 @@ def test_direct_dogpile_does_not_recurse_to_duckduckgo(monkeypatch):
     )
 
     assert search_dogpile("site:example.com test", session=session) == []
+
+
+def test_dogpile_uses_alternate_serp_route():
+    session = FakeSession(
+        [
+            FakeResponse(text="<html>Unexpected primary route</html>"),
+            FakeResponse(text='<a href="https://example.com/from-serp">Alternate result</a>'),
+        ]
+    )
+
+    results = search_dogpile("site:example.com test", session=session)
+
+    assert [row["url"] for row in results] == ["https://example.com/from-serp"]
+    assert [call[0] for call in session.calls] == [
+        "https://www.dogpile.com/search",
+        "https://www.dogpile.com/serp",
+    ]
+
+
+def test_dogpile_renders_when_direct_markup_is_unrecognized(monkeypatch):
+    session = FakeSession(
+        [
+            FakeResponse(text="<html>Unexpected provider page</html>"),
+            FakeResponse(text="<html>Unexpected provider page</html>"),
+        ]
+    )
+    browser_result = {
+        "title": "Rendered",
+        "url": "https://example.com/rendered",
+        "snippet": "",
+        "source": "dogpile_browser",
+        "result_type": "observed",
+        "verified": False,
+    }
+    monkeypatch.setattr(
+        "src.searcher._search_dogpile_browser",
+        lambda query, num: [browser_result],
+    )
+
+    assert search_dogpile("site:example.com test", session=session) == [browser_result]
 
 
 def test_google_uses_pagination_and_api_site_restriction():
