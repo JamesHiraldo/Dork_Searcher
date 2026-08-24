@@ -89,24 +89,28 @@ described later in this README; those flags belong to the installed Python comma
 
 ### Command Prompt (CMD)
 
-Open Command Prompt, change to the directory containing the executable, and run it:
+Open Command Prompt, change to the packaged-application directory, and run it:
 
 ```cmd
-cd /d "C:\path\to\Dork_Searcher"
+cd /d "C:\path\to\Dork_Searcher\Dork_Searcher_App"
 dork_searcher-2.0.0.exe
 ```
 
 For example, if it is on your Desktop:
 
 ```cmd
-cd /d "%USERPROFILE%\Desktop"
+cd /d "%USERPROFILE%\Desktop\Dork_Searcher\Dork_Searcher_App"
 dork_searcher-2.0.0.exe
 ```
+
+From the repository root, you can instead run `dork_searcher.bat`. The launcher
+prefers the packaged EXE, then `.venv`, and only then a correctly configured global
+Python installation.
 
 ### PowerShell
 
 ```powershell
-Set-Location "C:\path\to\Dork_Searcher"
+Set-Location "C:\path\to\Dork_Searcher\Dork_Searcher_App"
 .\dork_searcher-2.0.0.exe
 ```
 

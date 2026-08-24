@@ -1,10 +1,19 @@
 # Quick start
 
+From a downloaded or cloned Windows project folder, use the launcher. It prefers the
+packaged executable and does not depend on a global Python installation:
+
+```cmd
+dork_searcher.bat
+```
+
+For source development:
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
-python -m src.cli
+dork_searcher
 ```
 
 Useful non-interactive commands:

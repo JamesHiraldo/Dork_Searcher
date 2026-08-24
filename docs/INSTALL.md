@@ -18,6 +18,10 @@ python -m pip install -e "."
 dork_searcher
 ```
 
+When using the repository on Windows, `dork_searcher.bat` prefers the packaged EXE.
+If that artifact is absent, it checks `.venv` before global Python and refuses to run
+source mode until the required packages are installed.
+
 For development, install `.[dev]`. Playwright is installed as a core dependency and
 prefers Microsoft Edge or Google Chrome. Run `python -m playwright install chromium`
 only when neither browser is installed.

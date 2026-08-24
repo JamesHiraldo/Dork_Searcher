@@ -380,8 +380,9 @@ def _search_duckduckgo_browser(
         from playwright.async_api import async_playwright  # type: ignore[import-not-found]
     except ImportError as exc:
         raise SearchBackendError(
-            "DuckDuckGo blocked its HTML endpoint and browser support is unavailable. "
-            "Install this project with its browser dependency."
+            "DuckDuckGo blocked its HTML endpoint, but Playwright is not installed in "
+            "the Python interpreter running Dork Searcher. From the project directory, "
+            "run 'python -m pip install -e .', or launch the packaged Windows EXE."
         ) from exc
 
     async def _fetch_results() -> list[dict[str, Any]]:
@@ -514,8 +515,9 @@ def _search_dogpile_browser(
         from playwright.async_api import async_playwright  # type: ignore[import-not-found]
     except ImportError as exc:
         raise SearchBackendError(
-            "Dogpile's HTTP endpoint failed and browser support is unavailable. "
-            "Install this project with its browser dependency."
+            "Dogpile's HTTP endpoint failed, but Playwright is not installed in the "
+            "Python interpreter running Dork Searcher. From the project directory, run "
+            "'python -m pip install -e .', or launch the packaged Windows EXE."
         ) from exc
 
     async def _fetch_results() -> list[dict[str, Any]]:
