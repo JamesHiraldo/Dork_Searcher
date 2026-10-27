@@ -33,7 +33,7 @@ wayback-atlas --help
 Alternatively, install the supplied wheel in your chosen Python environment:
 
 ```cmd
-python -m pip install Wayback_Atlas_App\wayback_atlas-3.0.0-py3-none-any.whl
+python -m pip install Wayback_Atlas_App\wayback_atlas-3.1.0-py3-none-any.whl
 wayback-atlas --help
 ```
 
@@ -54,6 +54,9 @@ API keys are optional and source-specific. In PowerShell use
 `$env:RAPIDDNS_API_KEY = 'your-key'` or `$env:COMPLETEDNS_API_KEY = 'your-key'`;
 in CMD use `set RAPIDDNS_API_KEY=your-key`. These examples affect the current
 shell session. Do not put real keys in tracked files or screenshots.
+`CERTSPOTTER_API_KEY` is also supported for optional authenticated certificate searches.
+Run `wayback-atlas --version` and `wayback-atlas doctor` to inspect the installation
+without contacting providers. A configured key is not proof that the account is valid.
 
 Keep one output directory per investigation. See [operations](OPERATIONS.md) for
 path precedence and why switching directories produces a separate inventory.

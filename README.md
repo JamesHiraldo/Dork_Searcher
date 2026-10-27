@@ -1,4 +1,4 @@
-# Wayback Atlas 3.0
+# Wayback Atlas 3.1
 
 A terminal workspace for finding historical URLs, collecting subdomains, and tracking
 how their DNS and web availability change over time. Formerly Dork Searcher.
@@ -12,13 +12,16 @@ Use only on assets you own or have permission to assess.
 
 ## What changed
 
-- A color terminal dashboard, progress indicators, inventory tables and scriptable commands.
+- A spider ASCII banner, grouped color menus, progress indicators and scriptable commands.
 - Wayback CDX, crt.sh and Cert Spotter discovery, merged into a persistent SQLite inventory.
 - RapidDNS API integration and TXT/CSV/JSON imports; CompleteDNS nameserver history.
 - Repeated DNS and HTTP sampling, wildcard indicators, IP changes and intermittent candidates.
 - Offline archive dorks, custom templates and optional DuckDuckGo browser links.
 - Google and Dogpile backends removed. No Playwright or browser installation is needed.
 - JSON, spreadsheet-safe CSV and separate alive, down-observed and intermittent host lists.
+- Local `doctor` diagnostics, full SQLite backups and `--version` identification.
+- JSONL/NDJSON imports with original-source evidence, optional Cert Spotter authentication,
+  strict discovery exit codes and per-host deadlines. See [3.1 release notes](docs/RELEASE_NOTES.md).
 
 ## Start on Windows
 
@@ -75,7 +78,14 @@ Legacy `dork_searcher` and `dork-search` command names invoke the new interface.
 | 8 | Archive dork workbench and saved templates |
 | 9 | Open research resources |
 | 10 | Export the inventory and history |
+| 11 | Local diagnostics and full inventory backup |
 | 0 | Exit |
+
+Type a menu number and press Enter; the prompt no longer repeats the entire choice
+list. Blank input on the main menu does not exit. Source, check-mode and dork menus
+also use numbered choices, explain any Enter default, and offer `0` to go back.
+Wide terminals show two menu columns; narrow windows stack them. The spider uses
+plain ASCII characters for compatibility with older Windows CMD encodings.
 
 Discovery is passive with respect to the target: it queries third-party providers.
 Check/watch sends DNS queries and, unless `--dns-only` is selected, root-page GETs
@@ -115,23 +125,32 @@ for the dashboard. Every command supports `--help`.
 | | `--limit 5000`: maximum retained records per source |
 | | `--max-pages 20`: provider pagination ceiling |
 | | `--from-date YYYY`, `--to-date YYYY`: Wayback-only date filters, up to YYYYMMDDhhmmss |
-| check DOMAIN | `--dns-only`, `--concurrency 8`, `--timeout 5` |
+| | `--strict`: exit 1 if any provider errors or coverage is truncated |
+| check DOMAIN | `--dns-only`, `--concurrency 8`, `--timeout 5`, `--host-timeout 45` |
 | watch DOMAIN | Same check flags; `--rounds 5`, `--interval 60` seconds |
 | inventory DOMAIN | Display stored hosts and latest state |
-| import DOMAIN FILE | TXT, CSV or JSON, up to 25 MiB |
+| import DOMAIN FILE | TXT, CSV, JSON, JSONL or NDJSON, up to 25 MiB |
 | export DOMAIN | Timestamped JSON, CSV and host lists |
 | dorks DOMAIN QUERY | Filter locally stored archived URLs |
 | resources | Print all four requested resource links |
+| doctor | Local runtime/TLS/DNS/database checks; no network requests or key disclosure |
+| backup DESTINATION | Consistent full SQLite backup to a new file; never overwrites |
+
+`wayback-atlas --version` prints the running application's version.
 
 Concurrency is 1–50, timeout is greater than zero and at most 60 seconds,
-watch rounds are 1–10000 and the interval is at least 10 seconds.
+watch rounds are 1–10000 and the interval is 10–86400 seconds. `--host-timeout`
+is an overall per-host deadline greater than zero and at most 600 seconds.
+Timeouts and unexpected host errors become unknown samples; other hosts continue.
 A batch probes up to two public addresses per host, trying both IP families when possible.
 Date and page ceilings intentionally mean partial archive coverage on large domains.
-`--limit` counts retained evidence records, not unique hosts or downloaded bytes.
+`--limit` counts retained evidence records, not unique hosts. Each provider response
+is separately limited to 16 MiB of decompressed JSON. Oversized replies produce an
+explicit source error; narrow the query or use a suitable alternative source.
 `--max-pages` applies to paginated Wayback, Cert Spotter and RapidDNS requests;
 it does not paginate crt.sh or CompleteDNS. `--timeout` applies to individual
 DNS/HTTP operations, not the entire job. There is no Atlas requests-per-second flag.
-Date strings accept 4, 6, 8, 10, 12 or 14 digits; supply a real calendar date.
+Date strings accept 4, 6, 8, 10, 12 or 14 digits and are calendar-validated.
 
 Examples:
 
@@ -172,11 +191,10 @@ Reference contracts: [RapidDNS API](https://rapiddns.io/help/api),
 [CompleteDNS v2](https://completedns.com/api/documentation/v2),
 [Internet Archive CDX](https://github.com/internetarchive/wayback/tree/master/wayback-cdx-server).
 
-The current Cert Spotter adapter uses unauthenticated requests. Its documented
-endpoint lists unexpired issuances, not a complete historical certificate archive;
-unauthenticated use is limited. Atlas does not yet expose a Cert Spotter API-key
-setting. See [SSLMate's contract](https://sslmate.com/help/reference/ct_search_api_v1)
-and the [provider roadmap](docs/ASSESSMENT_AND_ROADMAP.md).
+Set optional `CERTSPOTTER_API_KEY` to send Bearer authentication to Cert Spotter.
+Without it, the adapter uses limited unauthenticated access. Its endpoint lists
+unexpired issuances, not a complete historical certificate archive; a key does not
+change that meaning. See [SSLMate's contract](https://sslmate.com/help/reference/ct_search_api_v1).
 
 ## Dorks without scraper failures
 
@@ -259,6 +277,8 @@ Reports can still contain private research context: keep output folders out of G
 Existing Dork Searcher results can be imported; nothing is automatically deleted.
 Importing an Atlas JSON report imports host records, not the complete database
 history. It is not a backup restore. See [import formats and backup procedure](docs/OPERATIONS.md).
+Use `backup NEW_FILE.sqlite3` (or menu 11) for a consistent database snapshot,
+including full evidence and check history. Copy custom templates separately.
 Custom output directories are not automatically covered by this repository's
 `.gitignore`; check before committing any research files.
 
@@ -275,7 +295,7 @@ Custom output directories are not automatically covered by this repository's
 6. Add scheduled report comparisons and notifications only after baselining expected
    maintenance, wildcard behavior and rate limits.
 
-This is a tested 3.0 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
+This is a tested 3.1 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
 The [code-based assessment](docs/ASSESSMENT_AND_ROADMAP.md) separates existing
 capabilities from proposed changes and provides an implementation order and test criteria.
 

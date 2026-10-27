@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import math
 import ssl
+import time
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -72,7 +74,7 @@ async def probe_address(host: str, address: str, timeout: float) -> dict[str, An
                 client.stream(
                     "GET",
                     f"{scheme}://{endpoint}/",
-                    headers={"Host": host, "User-Agent": "WaybackAtlas/3.0"},
+                    headers={"Host": host, "User-Agent": "WaybackAtlas/3.1"},
                     extensions={"sni_hostname": host},
                     follow_redirects=False,
                 ) as response,
@@ -144,10 +146,16 @@ async def sample_hosts(
     concurrency: int = 8,
     timeout: float = 5,
     http: bool = True,
+    host_timeout: float = 45,
     on_result: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     if not 1 <= concurrency <= 50 or not 0 < timeout <= 60:
         raise ValueError("Concurrency must be 1-50; timeout must be >0 and <=60 seconds")
+    if not math.isfinite(host_timeout) or not 0 < host_timeout <= 600:
+        raise ValueError("Host timeout must be >0 and <=600 seconds")
+    if not hosts:
+        return []
+    round_id = uuid.uuid4().hex
     wildcard_addresses: set[str] = set()
     for _ in range(2):
         check = await resolve_host(f"atlas-{uuid.uuid4().hex}.{target}", timeout)
@@ -160,10 +168,34 @@ async def sample_hosts(
     async def worker() -> None:
         while not queue.empty():
             host = queue.get_nowait()
+            started = time.monotonic()
+            checked_at = utc_now()
             try:
-                row = await check_host(
-                    host, http=http, timeout=timeout, wildcard_addresses=wildcard_addresses
-                )
+                try:
+                    row = await asyncio.wait_for(
+                        check_host(
+                            host, http=http, timeout=timeout, wildcard_addresses=wildcard_addresses
+                        ),
+                        timeout=host_timeout,
+                    )
+                except Exception as exc:
+                    # A failed host must not cancel other samples. Cancellation still propagates.
+                    row = {
+                        "hostname": host,
+                        "checked_at": checked_at,
+                        "state": "unknown",
+                        "dns_state": "unknown",
+                        "addresses": [],
+                        "cnames": [],
+                        "http": [],
+                        "http_requested": http,
+                        "error": type(exc).__name__,
+                        "dns_errors": [],
+                        "wildcard_possible": False,
+                    }
+                row["round_id"] = round_id
+                row["finished_at"] = utc_now()
+                row["duration_seconds"] = round(time.monotonic() - started, 3)
                 results.append(row)
                 if on_result:
                     on_result(row)

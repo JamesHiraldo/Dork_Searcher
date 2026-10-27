@@ -7,6 +7,8 @@
 - `src/availability.py`: bounded asynchronous DNS and HTTP sampling
 - `src/workbench.py`: offline URL query language and external research links
 - `src/workspace.py`: writable output directory selection
+- `src/http_transport.py`: streamed JSON size limits and bounded retry delays
+- `src/diagnostics.py`: local runtime, TLS, DNS, database and credential-presence checks
 - `src/artifacts.py`: atomic JSON/text and spreadsheet-safe CSV
 - `src/recon_pipeline.py`: retained parameter inventory command
 - `src/passive_probe.py`: retained HTTP-header/CORS command
@@ -26,6 +28,7 @@
 - `.github/workflows/ci.yml`: Windows Python test matrix and wheel/source-distribution packaging.
 - `scripts/demo.py`: synthetic, offline dashboard preview and sample exports.
 - `scripts/provider_smoke.py`: explicit live example.com provider/DNS/HTTP checks.
+- `scripts/release_smoke.py`: offline EXE checks with disposable synthetic data.
 - `docs/`: installation, operations, retained commands, development and roadmap.
 
 ## Generated files versus research data

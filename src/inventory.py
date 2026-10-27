@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -169,6 +171,35 @@ class Inventory:
                 "INSERT INTO checks(target,hostname,checked_at,payload) VALUES (?,?,?,?)",
                 (target, sample["hostname"], sample["checked_at"], json.dumps(sample)),
             )
+
+    def backup(self, destination: str | Path) -> Path:
+        """Create a consistent full-database copy without overwriting any existing file."""
+        path = Path(destination).expanduser().resolve()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(descriptor)
+        deadline = time.monotonic() + 30
+
+        def progress(status: int, remaining: int, total: int) -> None:
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    "Database backup exceeded 30 seconds; retry during a quiet period"
+                )
+
+        try:
+            connection = sqlite3.connect(path)
+            try:
+                self.db.backup(connection, pages=256, progress=progress, sleep=0.1)
+                connection.execute("PRAGMA journal_mode=DELETE")
+                if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                    raise ValueError("Backup integrity check failed")
+            finally:
+                connection.close()
+        except BaseException:
+            # This path was created exclusively above, never an existing user file.
+            path.unlink(missing_ok=True)
+            raise
+        return path
 
     def report(self, target: str) -> dict[str, Any]:
         assets = []

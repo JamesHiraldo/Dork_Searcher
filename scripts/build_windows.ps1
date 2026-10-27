@@ -12,9 +12,9 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
 if ($LASTEXITCODE -ne 0) { throw "Wheel build failed." }
 $executable = Resolve-Path -LiteralPath "Wayback_Atlas_App\wayback_atlas.exe"
 Get-FileHash -LiteralPath $executable -Algorithm SHA256 | Format-List
-$releaseFiles = Get-ChildItem -LiteralPath "Wayback_Atlas_App" -File |
-    Where-Object { $_.Extension -in @(".exe", ".whl") } |
-    Sort-Object Name
+$atlasVersion = (& $PythonCommand -c "from src import __version__; print(__version__)").Trim()
+if ($LASTEXITCODE -ne 0) { throw "Could not read application version." }
+$releaseFiles = Get-Item -LiteralPath $executable,"Wayback_Atlas_App\wayback_atlas-$atlasVersion-py3-none-any.whl"
 $checksumLines = foreach ($releaseFile in $releaseFiles) {
     $digest = (Get-FileHash -LiteralPath $releaseFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     "$digest  $($releaseFile.Name)"

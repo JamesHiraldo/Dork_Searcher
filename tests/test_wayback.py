@@ -1,3 +1,5 @@
+import json
+
 import requests
 
 from src.wayback import WaybackClient, _parse_cdx_payload
@@ -11,6 +13,12 @@ class FakeResponse:
 
     def json(self):
         return self._payload
+
+    def iter_content(self, chunk_size):
+        yield json.dumps(self._payload).encode()
+
+    def close(self):
+        pass
 
     def raise_for_status(self):
         if self.status_code >= 400:

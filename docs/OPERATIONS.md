@@ -1,6 +1,6 @@
 # Operations, data and troubleshooting
 
-Applies to Wayback Atlas 3.0.0. Commands below run in CMD from the repository
+Applies to Wayback Atlas 3.1.0. Commands below run in CMD from the repository
 root. In PowerShell prefix the launcher with `.\`. Use only authorized targets.
 
 ## Keep a consistent workspace
@@ -40,6 +40,10 @@ Timeouts apply per operation, so a host/round can take substantially longer than
 `--timeout`. Concurrency limits workers, not requests per second. Use conservative
 settings that fit the program's limits. `watch` waits after each completed round,
 and never refreshes its startup host list. It is not a background service.
+`--host-timeout` defaults to 45 seconds (maximum 600) for each host's overall
+DNS/HTTP work. It excludes time waiting in the queue and the round's wildcard
+controls. Unexpected host errors/deadlines become `unknown`, preserving the batch.
+Samples include a shared round ID, finish time and duration; old samples remain readable.
 
 ## Import formats and limits
 
@@ -48,10 +52,10 @@ wayback_atlas.bat --output-dir "D:\Recon\Example" import example.com "D:\Recon\h
 ```
 
 Files must be UTF-8 (BOM accepted), at most 25 MiB. At most 50,000 distinct
-hostname/URL records are retained per import. The current CLI does not expose an
+evidence records are retained per import. The current CLI does not expose an
 import-limit flag. Duplicates are collapsed; unrelated and malformed rows are skipped.
 
-TXT: one hostname or absolute HTTP(S) URL per line. Put comment markers in column 1:
+TXT: one hostname or absolute HTTP(S) URL per line. Leading-whitespace comments are accepted:
 
 ```text
 # Synthetic format example
@@ -69,9 +73,11 @@ old.example.com,
 
 JSON: a list of strings/objects, or a wrapper with `assets`, `records`, `data`, or
 RapidDNS-style `data.data`. Object hostname lookup uses the first nonempty field
-in this order: `hostname`, `subdomain`, `domain`, `url`, `title`. An accompanying
+in this order: `hostname`, `host`, `subdomain`, `domain`, `url`, `title`. An accompanying
 URL must refer to the same host and must not contain credentials. `observed_at`
-or `timestamp` is retained when supplied. Import does not retain arbitrary fields.
+or `timestamp` is retained when supplied. `source`, `sources`, `type`, `record_type`
+and `value` are retained under `imported_*` evidence fields when strings or lists.
+Import does not retain arbitrary fields or promote imported provenance to live provider proof.
 
 ```json
 [
@@ -80,8 +86,10 @@ or `timestamp` is retained when supplied. Import does not retain arbitrary field
 ]
 ```
 
-JSON Lines/NDJSON and an entire `wayback-recon` JSON report are not supported
-directly. Use host TXT or the retained command's CSV export instead. An Atlas JSON
+JSON Lines/NDJSON (`.jsonl`/`.ndjson`) accepts one JSON record per nonempty line,
+including Subfinder's `host`/`source` records. Parse errors identify the line without
+echoing its contents. An entire `wayback-recon` JSON report is not supported
+directly; use its CSV export instead. An Atlas JSON
 report can seed its host list, but nested evidence, checks, original local discovery
 times and provider provenance are not restored: the new source is `import`.
 Import is not a database-backup restore.
@@ -129,9 +137,19 @@ Ctrl+C retains completed samples but can interrupt the final report export; run
    `--output-dir` and run `inventory DOMAIN`; compare expected hosts and samples.
 4. Resume only the intended working copy. A later `discover`/`check` will modify it.
 
-There is no built-in online backup, restore, prune or schema-migration command.
-For backup while processes are running, use SQLite's supported backup facilities
-with an appropriate database tool, not a raw copy of the main database file alone.
+For a consistent database-only copy, including while a watcher runs, use:
+
+```cmd
+wayback_atlas.bat --output-dir "D:\Recon\Example" backup "D:\Recon\Example-backup.sqlite3"
+```
+
+This uses SQLite's backup API, checks integrity and refuses to overwrite an existing
+path. It has a 30-second progress deadline; retry during a quiet period if busy.
+Custom dork templates and exported reports are not part of this database-only copy.
+To restore, stop the application and place a copy of the backup in a new empty
+output directory named `inventory.sqlite3`, then run `inventory` with that directory.
+There is no automatic restore, prune or schema-migration command. Never use a raw
+copy of just the live main database file as an online backup.
 Keep databases on local storage; back up closed files to sync/network storage.
 
 Query-name-based redaction is a heuristic, not a secret detector. Names, paths,
@@ -144,13 +162,14 @@ output path. Run `git status --short` before committing. Do not publish API keys
 | Code | Atlas meaning |
 | --- | --- |
 | 0 | Command completed; can include empty results, failed hosts or partial provider coverage |
-| 1 | Every selected discovery provider returned an error status |
+| 1 | All discovery sources failed; or any failed/truncated with `discover --strict`; or `doctor` found a local error |
 | 2 | CLI parsing, input, output-path or handled database/OS error |
 | 130 | User interrupted the CLI |
 
 Inspect `provider_runs`, truncation and per-host states rather than treating exit
-0 as complete discovery or universal availability. An import with zero retained
-rows can also return 0. No strict-completeness or machine-readable stdout flag exists.
+0 as complete discovery or universal availability. `discover --strict` fails on
+any source error or truncation, but cannot establish index completeness. An import
+with zero retained rows can still return 0. No machine-readable stdout flag exists.
 Use absolute output paths, prevent overlapping jobs, and preserve logs if you
 configure an external scheduler yourself. Atlas installs no scheduled tasks.
 
@@ -164,15 +183,19 @@ configure an external scheduler yourself. Atlas installs no scheduled tasks.
 | Inventory is empty | Confirm the exact root and output directory. Discovery/import must run before check/watch. |
 | Provider HTTP 403/429 or challenge page | Review provider account/quota and wait. Use another documented source or import; do not loop rapidly. |
 | Missing RapidDNS/CompleteDNS key | Set the corresponding environment variable in the same shell; select that source explicitly. |
-| Cert Spotter misses older names | Its endpoint covers unexpired issuances and Atlas currently has no key setting; combine sources. |
+| Cert Spotter misses older names | Its endpoint covers unexpired issuances even with `CERTSPOTTER_API_KEY`; combine sources. |
 | Discovery says limit reached | Coverage is partial; try a suitable budget or year-sliced Wayback jobs. Existing runs cannot resume across restarts. |
 | Many hosts switch down together | Check local connectivity/resolver and compare another permitted vantage point. This is not proof of target outages. |
 | Database locked | Stop duplicate writers and wait for normal shutdown. Do not delete SQLite sidecars. |
 | SSL or corporate proxy trouble | Check system time/trust policy and distinguish provider access from direct HTTP probes. Do not disable TLS verification. |
 | A copied `.venv` cannot start | Create `.venv-atlas` using an installed Python; copied environments retain interpreter paths. |
+| Provider response exceeds 16 MiB | Use a narrower archive query, a different documented source or a split export import. |
 | Old pytest folders deny access | Use the verification script's separate cache paths. Those caches are not needed by the EXE. |
 
 For reproducible issues provide version, source versus EXE, command with keys and
 private targets removed, exit code, relevant provider status, and OS/Python details.
 Do not post a whole research database. See [development](DEVELOPMENT.md) and
 [security reporting](../SECURITY.md).
+`doctor` checks local TLS context creation, DNS backend/configuration, dependencies,
+database integrity and optional key presence. It does not test network reachability
+or validate provider credentials. `--version` identifies the running source/EXE version.

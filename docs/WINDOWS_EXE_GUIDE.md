@@ -32,5 +32,5 @@ Obsolete Dork Searcher 2.0 binaries have been removed from the working folder.
 The old `dork_searcher.bat` name is only a compatibility launcher for Atlas.
 The EXE is a self-contained Windows build; Linux/macOS use the Python installation.
 Source edits do not update this EXE automatically. See [development](DEVELOPMENT.md)
-to rebuild it. This documentation-only update does not replace the existing binaries.
+to rebuild it. The current release includes the spider-themed, numbered terminal menus.
 See [README](../README.md) for all flags and status definitions.

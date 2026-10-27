@@ -13,6 +13,7 @@ from urllib.parse import quote, urlsplit
 
 import requests
 
+from .http_transport import read_json, retry_delay
 from .recon_pipeline import redact_sensitive_url
 from .scope import ScopeError, host_in_scope, normalize_hostname, parse_http_url
 from .wayback import WaybackClient
@@ -36,23 +37,27 @@ def request_json(
 ) -> Any:
     """Bound transient retries and never expose credential-bearing request URLs."""
     for attempt in range(3):
+        response = None
         try:
-            response = session.get(url, timeout=(10, 25), allow_redirects=False, **kwargs)
+            response = session.get(
+                url, timeout=(10, 25), allow_redirects=False, stream=True, **kwargs
+            )
+            if (response.status_code == 429 or response.status_code >= 500) and attempt < 2:
+                delay = retry_delay(response.headers.get("Retry-After", ""), 0.5 * 2**attempt)
+                response.close()
+                time.sleep(delay)
+                continue
+            if not 200 <= response.status_code < 300:
+                raise ValueError(f"Provider returned HTTP {response.status_code}")
+            payload = read_json(response)
         except requests.RequestException as exc:
             if attempt < 2:
                 time.sleep(0.5 * 2**attempt)
                 continue
             raise ValueError(f"Provider transport failure: {type(exc).__name__}") from None
-        if (response.status_code == 429 or response.status_code >= 500) and attempt < 2:
-            delay = response.headers.get("Retry-After", "")
-            time.sleep(min(float(delay), 30) if delay.isdigit() else 0.5 * 2**attempt)
-            continue
-        if not 200 <= response.status_code < 300:
-            raise ValueError(f"Provider returned HTTP {response.status_code}")
-        try:
-            payload = response.json()
-        except ValueError:
-            raise ValueError("Provider returned a non-JSON page (possibly a challenge)") from None
+        finally:
+            if response is not None:
+                response.close()
         if isinstance(payload, dict) and (payload.get("error_type") or payload.get("error")):
             message = str(payload.get("error_type") or "provider_error")
             for secret in secrets:
@@ -63,6 +68,8 @@ def request_json(
 
 
 def record(target: str, host: str, **extra: Any) -> dict[str, Any] | None:
+    if not isinstance(host, str):
+        return None
     try:
         normalized = normalize_hostname(host.removeprefix("*."))
     except (ScopeError, ValueError):
@@ -88,18 +95,25 @@ def collect(
         raise ValueError("Limits must be positive")
     result = DiscoveryResult(source)
     client = session or requests.Session()
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[str] = set()
+    counts = {"accepted": 0, "rejected": 0, "duplicates": 0, "omitted": 0}
 
     def add(host: str, **extra: Any) -> None:
         item = record(target, host, **extra)
         if item:
-            key = (item["hostname"], str(item.get("url", "")), str(item.get("observed_at", "")))
+            key = json.dumps(item, sort_keys=True)
             if key not in seen:
-                seen.add(key)
                 if len(result.records) < limit:
+                    seen.add(key)
                     result.records.append(item)
+                    counts["accepted"] += 1
                 else:
                     result.truncated = True
+                    counts["omitted"] += 1
+            else:
+                counts["duplicates"] += 1
+        else:
+            counts["rejected"] += 1
 
     try:
         if source == "wayback":
@@ -129,9 +143,12 @@ def collect(
             if not isinstance(data, list):
                 raise ValueError("Unexpected crt.sh response schema")
             for cert in data:
-                if isinstance(cert, dict):
-                    for name in str(cert.get("name_value", "")).splitlines():
-                        add(name, observed_at=str(cert.get("entry_timestamp", "")))
+                if not isinstance(cert, dict) or not isinstance(cert.get("name_value"), str):
+                    raise ValueError(
+                        "Unexpected crt.sh certificate schema; partial results retained"
+                    )
+                for name in cert["name_value"].splitlines():
+                    add(name, observed_at=str(cert.get("entry_timestamp", "")))
         elif source == "certspotter":
             after = None
             cursors: set[str] = set()
@@ -140,18 +157,22 @@ def collect(
                 if after:
                     params["after"] = after
                 data = request_json(
-                    client, "https://api.certspotter.com/v1/issuances", params=params
+                    client,
+                    "https://api.certspotter.com/v1/issuances",
+                    params=params,
+                    headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+                    secrets=(api_key,),
                 )
                 if not isinstance(data, list):
                     raise ValueError("Unexpected Cert Spotter response schema")
                 if not data:
                     break
                 for cert in data:
-                    if isinstance(cert, dict) and isinstance(cert.get("dns_names"), list):
-                        for name in cert["dns_names"]:
-                            if isinstance(name, str):
-                                add(name, observed_at=str(cert.get("not_before", "")))
-                after = str(data[-1].get("id", "")) if isinstance(data[-1], dict) else ""
+                    if not isinstance(cert, dict) or not isinstance(cert.get("dns_names"), list):
+                        raise ValueError("Unexpected Cert Spotter certificate schema")
+                    for name in cert["dns_names"]:
+                        add(name, observed_at=str(cert.get("not_before", "")))
+                after = str(data[-1].get("id") or "") if isinstance(data[-1], dict) else ""
                 if not after or after in cursors:
                     raise ValueError("Cert Spotter pagination stalled; results are partial")
                 cursors.add(after)
@@ -176,14 +197,24 @@ def collect(
                 if not isinstance(body, dict) or not isinstance(body.get("data"), list):
                     raise ValueError("Unexpected RapidDNS response schema")
                 for row in body["data"]:
-                    if isinstance(row, dict):
-                        add(
-                            str(row.get("subdomain", "")),
-                            observed_at=str(row.get("timestamp") or row.get("date") or ""),
-                            record_type=str(row.get("type", "")),
-                            value=str(row.get("value", "")),
-                        )
-                if page * 100 >= int(body.get("total", 0)) or not body["data"]:
+                    if not isinstance(row, dict):
+                        raise ValueError("Unexpected RapidDNS record schema")
+                    add(
+                        row.get("subdomain", ""),
+                        observed_at=str(row.get("timestamp") or row.get("date") or ""),
+                        record_type=str(row.get("type", "")),
+                        value=str(row.get("value", "")),
+                    )
+                total = body.get("total")
+                if (
+                    isinstance(total, bool)
+                    or not isinstance(total, (int, str))
+                    or not str(total).isdigit()
+                ):
+                    raise ValueError(
+                        "RapidDNS returned an invalid total count; partial results retained"
+                    )
+                if page * 100 >= int(total) or not body["data"]:
                     break
                 if len(result.records) >= limit or page == max_pages:
                     result.truncated = True
@@ -211,6 +242,8 @@ def collect(
     except (ValueError, requests.RequestException) as exc:
         result.error = str(exc).replace(api_key, "[REDACTED]") if api_key else str(exc)
     finally:
+        result.metadata.update(counts)
+        result.metadata["unique_hosts"] = len({r["hostname"] for r in result.records})
         if session is None:
             client.close()
     return result
@@ -219,11 +252,21 @@ def collect(
 def import_records(path: str, target: str, limit: int = 50000) -> DiscoveryResult:
     """Accept text, CSV, JSON, RapidDNS JSON, or an Atlas export without executing content."""
     source = Path(path).expanduser()
+    if limit < 1:
+        raise ValueError("Import limit must be positive")
     if source.stat().st_size > 25 * 1024 * 1024:
         raise ValueError("Import exceeds 25 MiB; split it into smaller files")
     text = source.read_text(encoding="utf-8-sig")
     rows: Any
-    if source.suffix.lower() == ".json":
+    if source.suffix.lower() in (".jsonl", ".ndjson"):
+        rows = []
+        for number, line in enumerate(text.splitlines(), 1):
+            if line.strip():
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    raise ValueError(f"Invalid JSON on import line {number}") from None
+    elif source.suffix.lower() == ".json":
         rows = json.loads(text)
         if isinstance(rows, dict):
             rows = rows.get("assets", rows.get("records", rows.get("data", [])))
@@ -235,9 +278,13 @@ def import_records(path: str, target: str, limit: int = 50000) -> DiscoveryResul
         rows = list(csv.DictReader(io.StringIO(text)))
     else:
         rows = [
-            line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")
+            line.strip()
+            for line in text.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
         ]
-    result = DiscoveryResult("import", metadata={"filename": source.name, "rejected": 0})
+    result = DiscoveryResult(
+        "import", metadata={"filename": source.name, "rejected": 0, "duplicates": 0, "omitted": 0}
+    )
     seen = set()
     for row in rows:
         raw = (
@@ -246,7 +293,7 @@ def import_records(path: str, target: str, limit: int = 50000) -> DiscoveryResul
             else next(
                 (
                     str(row[key])
-                    for key in ("hostname", "subdomain", "domain", "url", "title")
+                    for key in ("hostname", "host", "subdomain", "domain", "url", "title")
                     if isinstance(row, dict) and row.get(key)
                 ),
                 "",
@@ -269,13 +316,21 @@ def import_records(path: str, target: str, limit: int = 50000) -> DiscoveryResul
             extra["url"] = redact_sensitive_url(validated)
         if isinstance(row, dict):
             extra["observed_at"] = str(row.get("observed_at") or row.get("timestamp") or "")
+            for key in ("type", "record_type", "value", "source", "sources"):
+                if isinstance(row.get(key), (str, list)):
+                    extra[f"imported_{key}"] = row[key]
         item = record(target, raw, **extra)
         if not item:
             result.metadata["rejected"] += 1
-        elif (item["hostname"], item.get("url", "")) not in seen:
-            seen.add((item["hostname"], item.get("url", "")))
+        elif json.dumps(item, sort_keys=True) not in seen:
             if len(result.records) < limit:
+                seen.add(json.dumps(item, sort_keys=True))
                 result.records.append(item)
             else:
                 result.truncated = True
+                result.metadata["omitted"] += 1
+        else:
+            result.metadata["duplicates"] += 1
+    result.metadata["accepted"] = len(result.records)
+    result.metadata["unique_hosts"] = len({r["hostname"] for r in result.records})
     return result

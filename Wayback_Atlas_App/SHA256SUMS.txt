@@ -1,2 +1,2 @@
-8e0893b1be47fad120ecf5c3fa45482f17fbb2d13ba5588d99a18d20bb9c533b  wayback_atlas.exe
-68ac473f379eb6934d85fb9e08fc1efcd51b6a4ceef988c148474593668f9ff5  wayback_atlas-3.0.0-py3-none-any.whl
+b499a4f137c27fa9a4a4e8fe00dbc5c6d93302c183adde76da217cfb3008679d  wayback_atlas.exe
+abd24f8848cbb90746154a4d2a7d633287e3e15903cc0df26058ba82ae332836  wayback_atlas-3.1.0-py3-none-any.whl

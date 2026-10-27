@@ -74,7 +74,11 @@ byte-for-byte reproducible. There is currently no release-signing step.
 7. Publish source, release notes and checksums together. Do not include test databases,
    provider keys or research results. Claim only the platforms actually tested.
 
-Current CI builds wheel/source distributions but not the frozen EXE; adding that
-gate is a [roadmap priority](ASSESSMENT_AND_ROADMAP.md). Documentation-only changes
+CI now includes a Windows EXE build and offline smoke job after source tests.
+Run it locally with `python scripts/release_smoke.py` after building. It exercises
+version/help, local TLS/DNS diagnostics, import, inventory, dorks, full backup,
+export, the menu and EOF without target requests. It creates and cleans a temporary
+synthetic workspace. CI configuration is not evidence of a successful remote run.
+Documentation-only changes
 do not require rebuilding executable code. The wheel's embedded README metadata
 remains a build-time snapshot until the next wheel rebuild.

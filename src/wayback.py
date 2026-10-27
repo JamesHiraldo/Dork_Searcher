@@ -7,18 +7,21 @@ import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import requests
 
 if __package__:
+    from .http_transport import read_json, retry_delay
     from .scope import normalize_hostname, url_in_scope
 else:  # pragma: no cover
+    from http_transport import read_json, retry_delay  # type: ignore
     from scope import normalize_hostname, url_in_scope  # type: ignore
 
 
 CDX_ENDPOINT = "https://web.archive.org/cdx/search/cdx"
-DEFAULT_USER_AGENT = "WaybackAtlas/3.0"
+DEFAULT_USER_AGENT = "WaybackAtlas/3.1"
 
 
 class WaybackError(RuntimeError):
@@ -97,32 +100,34 @@ class WaybackClient:
     def _get_page(self, params: dict[str, Any]) -> Any:
         last_error: Exception | None = None
         for attempt in range(self.retries):
+            response = None
             try:
                 response = self.session.get(
                     CDX_ENDPOINT,
                     params=params,
                     timeout=self.timeout,
                     headers={"User-Agent": self.user_agent, "Accept": "application/json"},
+                    stream=True,
                 )
                 if response.status_code == 429 or 500 <= response.status_code < 600:
                     retry_after = response.headers.get("Retry-After", "")
-                    delay = (
-                        min(float(retry_after), 60.0)
-                        if retry_after.isdigit()
-                        else self.backoff * (2**attempt)
-                    )
+                    delay = retry_delay(retry_after, self.backoff * 2**attempt, 60)
                     if attempt + 1 < self.retries:
+                        response.close()
                         time.sleep(delay)
                         continue
                 response.raise_for_status()
                 try:
-                    return response.json()
+                    return read_json(response)
                 except (ValueError, json.JSONDecodeError) as exc:
-                    raise WaybackError("CDX returned invalid JSON") from exc
+                    raise WaybackError(f"CDX response: {exc}") from exc
             except (requests.RequestException, WaybackError) as exc:
                 last_error = exc
                 if attempt + 1 < self.retries:
                     time.sleep(self.backoff * (2**attempt))
+            finally:
+                if response is not None:
+                    response.close()
         raise WaybackError(f"CDX request failed after {self.retries} attempts: {last_error}")
 
     def fetch(
@@ -144,6 +149,11 @@ class WaybackClient:
         for value in (from_date, to_date):
             if value and not re.fullmatch(r"\d{4}(?:\d{2}){0,5}", value):
                 raise ValueError("Archive dates must be YYYY through YYYYMMDDhhmmss")
+            if value:
+                try:
+                    datetime.strptime(value + "20000101000000"[len(value) :], "%Y%m%d%H%M%S")
+                except ValueError:
+                    raise ValueError("Archive dates must be valid calendar dates") from None
         if from_date and to_date and from_date.ljust(14, "0") > to_date.ljust(14, "9"):
             raise ValueError("Archive start must not exceed archive end")
 

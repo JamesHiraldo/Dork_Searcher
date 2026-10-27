@@ -18,6 +18,12 @@ class Response:
     def json(self):
         return self.payload
 
+    def iter_content(self, chunk_size):
+        yield json.dumps(self.payload).encode()
+
+    def close(self):
+        pass
+
 
 class Session:
     def __init__(self, payloads):
@@ -105,7 +111,8 @@ def test_import_csv_deduplicates_and_rejects_scope_confusion(tmp_path):
     path = tmp_path / "hosts.csv"
     path.write_text("subdomain,type\napi.example.com,A\napi.example.com,AAAA\nnotexample.com,A\n")
     result = import_records(str(path), "example.com")
-    assert [r["hostname"] for r in result.records] == ["api.example.com"]
+    assert [r["hostname"] for r in result.records] == ["api.example.com", "api.example.com"]
+    assert {r["imported_type"] for r in result.records} == {"A", "AAAA"}
     assert result.metadata["rejected"] == 1
 
 

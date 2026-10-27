@@ -14,7 +14,7 @@ acknowledgement below applies to the retained HTTP probe, not Atlas discovery.
 `wayback-recon` uses the shared HTTPS CDX client. It retries transient failures,
 honors `Retry-After`, paginates with resumption keys, validates that every archived
 URL belongs to the requested scope, and reports truncation and errors explicitly.
-Retry delays are bounded; an HTTP-date Retry-After is not parsed by this client.
+Retry delays are bounded; both seconds and HTTP-date Retry-After values are parsed.
 Pagination state is not saved across process restarts. No target pages are fetched.
 
 ```powershell

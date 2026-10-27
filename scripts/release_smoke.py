@@ -1,0 +1,68 @@
+"""Offline smoke test of the actual packaged executable, with disposable synthetic data."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import subprocess
+import tempfile
+from contextlib import closing
+from pathlib import Path
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--exe", default="Wayback_Atlas_App/wayback_atlas.exe")
+    parser.add_argument("--expected-version", default="3.1.0")
+    args = parser.parse_args()
+    executable = Path(args.exe).resolve(strict=True)
+    with tempfile.TemporaryDirectory(prefix="atlas-release-smoke-") as temporary:
+        directory = Path(temporary)
+
+        def run(*arguments: str, input_text: str | None = None) -> str:
+            print(f"Checking packaged {arguments[0] if arguments else 'menu'}...", flush=True)
+            result = subprocess.run(
+                [str(executable), "--output-dir", str(directory), *arguments],
+                input=input_text,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                check=False,
+            )
+            if result.returncode:
+                raise RuntimeError(
+                    f"EXE smoke failed: {arguments}\n{result.stdout}\n{result.stderr}"
+                )
+            return result.stdout
+
+        assert args.expected_version in run("--version")
+        assert "doctor" in run("--help")
+        assert "TLS" in run("doctor")
+        hosts = directory / "hosts.txt"
+        hosts.write_text(
+            "api.example.com\nhttps://old.example.com/api?version=1\n", encoding="utf-8"
+        )
+        run("import", "example.com", str(hosts))
+        assert "api.example.com" in run("inventory", "example.com")
+        run("dorks", "example.com", "path:/api")
+        assert len(json.loads((directory / "archive_matches.json").read_text())) == 1
+        backup = directory / "copy.sqlite3"
+        run("backup", str(backup))
+        with closing(sqlite3.connect(backup)) as database:
+            assert database.execute("SELECT count(*) FROM assets").fetchone()[0] == 2
+        run("export", "example.com")
+        output = run(input_text="\ninvalid\n11\n1\n\n0\n")
+        assert "(o)" in output and "Please type one" in output and "TLS" in output
+        assert "0/1/2/3" not in output
+        assert "Input closed" in run(input_text="")
+    print(
+        "Packaged release smoke passed: version, TLS/DNS doctor, import, inventory, "
+        "dorks, backup, export, UI and EOF."
+    )
+
+
+if __name__ == "__main__":
+    main()

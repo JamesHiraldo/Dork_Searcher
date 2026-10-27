@@ -48,3 +48,25 @@ jobs:
           name: python-distributions
           path: dist/*
 
+  windows-exe:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Build Windows release
+        shell: pwsh
+        run: ./scripts/build_windows.ps1 -PythonCommand python
+      - name: Offline frozen executable smoke test
+        run: python scripts/release_smoke.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: |
+            Wayback_Atlas_App/wayback_atlas.exe
+            Wayback_Atlas_App/wayback_atlas-3.1.0-py3-none-any.whl
+            Wayback_Atlas_App/SHA256SUMS.txt
+

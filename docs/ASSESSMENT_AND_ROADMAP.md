@@ -1,9 +1,23 @@
 # Engineering assessment and improvement roadmap
 
-Reviewed against the current 3.0.0 source and CLI contracts on 2026-10-27 (UTC).
+Baseline review: 3.0.0. Updated for 3.1.0 on October 26, 2026 (America/New_York).
 This is a functionality/reliability review, not an exhaustive security audit or a
-benchmark. Proposed commands and capabilities below are **not implemented**.
-No runtime features, accounts, schedules or external tools were changed in this review.
+benchmark. The original gaps below describe the 3.0 baseline. The status table
+distinguishes delivered improvements from remaining recommendations; do not treat
+proposed commands as available features. No accounts or schedules were created.
+
+## Delivery status in 3.1
+
+| Area | Implemented | Remaining |
+| --- | --- | --- |
+| Providers | Full-record deduplication, streamed response limits, schema errors, counters, optional Cert Spotter key | Unique-host-first budgets, cached cooldowns, broader schema fixtures |
+| Collection recovery | Full SQLite backup | Persisted pagination checkpoints and page-level commits |
+| Monitoring | Per-host deadline/isolation, round IDs, finish time/duration | Resolver/vantage identity, network-health controls, confirmation thresholds |
+| Database | Consistent backup and integrity check | Versioned migrations, automated restore, retention, paginated reports |
+| Release | Doctor/version, frozen-EXE smoke script and CI job | Reproducible dependency constraints, signing, wider OS validation |
+| Interchange | JSONL/NDJSON, host fields, imported provenance/DNS evidence | Common Crawl and richer timeline views |
+
+See [release notes](RELEASE_NOTES.md) for current behavior and compatibility.
 
 ## Overall assessment
 
@@ -22,17 +36,16 @@ Windows release. These are code observations, not proof of complete robustness.
 
 ### 1. Provider contracts, coverage accounting and fault isolation — high priority
 
-Evidence: [discovery.py](../src/discovery.py) deduplicates on hostname, URL and
-timestamp. Certificate renewals consume multiple retained records for one host;
-different RapidDNS record types/values with the same host/time can collapse into
-one record. `limit` caps retained records, not downloaded response size. Responses
-are loaded as JSON without a byte ceiling. Some wrong-type values can raise
-exceptions outside the current ValueError/Requests error handlers.
+Baseline: [discovery.py](../src/discovery.py) deduplicated on hostname, URL and
+timestamp, losing some distinct DNS evidence, and buffered unbounded JSON. The
+3.1 implementation fixes that fingerprint, caps streamed JSON and reports malformed
+records/counts. Certificate renewals still consume multiple retained records for one
+host; a unique-host-first budget remains a useful follow-up.
 
 Offline reproduction during this review: a synthetic successful RapidDNS response
 containing A and AAAA records for `api.example.com` at the same timestamp produced
-one retained record. This confirms the deduplication edge case without querying a
-provider or target. The remaining robustness observations are source-reviewed, not
+one retained record. This confirmed the 3.0 deduplication edge case without querying a
+provider or target; 3.1 includes its fix and regression test. Other baseline observations are source-reviewed, not
 claims that every failure mode was reproduced.
 
 Recommendation: validate provider schemas, fingerprint complete relevant evidence,
@@ -40,7 +53,7 @@ separate unique-host and evidence budgets, cap response bytes, and report downlo
 accepted, rejected and retained counts. Isolate malformed-provider failures so the
 next source still runs. Add per-provider rate budgets, jitter and persisted cooldowns.
 
-Cert Spotter currently sends no authentication. Add an optional key and preserve
+Cert Spotter sent no authentication in 3.0; 3.1 adds an optional key. Preserve
 provider error codes; do not advertise unlimited or full historical coverage.
 The official API is for unexpired issuances, supports authenticated access, and
 limits unauthenticated evaluation queries. [SSLMate reference](https://sslmate.com/help/reference/ct_search_api_v1).
@@ -72,7 +85,9 @@ Evidence: [availability.py](../src/availability.py) uses one system resolver/net
 root-level wildcard controls and per-operation timeouts. [inventory.py](../src/inventory.py)
 flags two state transitions in the latest 100 samples regardless of elapsed time.
 There is no persisted round ID, resolver identity or network-health control. Samples
-are saved incrementally, but an unexpected worker exception can terminate the batch.
+are saved incrementally. Version 3.1 now isolates host exceptions, records round IDs
+and durations, and imposes an overall per-host deadline. Network-health controls
+and resolver/vantage identities remain absent.
 
 Recommendation: add sample/run IDs, start/end times, resolver/vantage identity,
 per-host overall deadlines and network-health context. Isolate unexpected host
@@ -103,7 +118,8 @@ archive status from live state. Large jobs retain date/budget limits and checkpo
 ### 5. Database lifecycle and report performance — medium priority
 
 Evidence: [inventory.py](../src/inventory.py) has `CREATE TABLE IF NOT EXISTS` but no
-schema migration manager, backup API or retention policy. `report()` performs per-host
+schema migration manager or retention policy. Version 3.1 adds the SQLite backup API.
+`report()` performs per-host
 queries and materializes evidence and samples for all assets, including when the UI
 only shows 200 rows. [artifacts.py](../src/artifacts.py) builds entire exports in memory.
 JSON import is lossy and cannot restore historical samples.
@@ -120,11 +136,11 @@ documented memory/time targets before claiming scalability.
 
 ### 6. Repeatable Windows release and operational diagnostics — medium priority
 
-Evidence: [.github/workflows/ci.yml](../.github/workflows/ci.yml) tests Windows Python
-versions and builds Python distributions, but does not build/smoke-test the EXE.
+Evidence: [.github/workflows/ci.yml](../.github/workflows/ci.yml) originally tested Windows Python
+versions and built Python distributions only. Version 3.1 adds an EXE build/smoke job.
 The local build needed SSL runtime-data handling; source tests alone did not catch
 that packaging failure. Dependencies use ranges, and the launcher prefers a possibly
-older EXE over edited source. There is no `doctor` or `--version` command.
+older EXE over edited source. Version 3.1 adds `doctor` and `--version` commands.
 
 Recommendation: frozen-EXE CI tests, clean-machine smoke tests, build identity and
 dependency manifest, reproducible dependency constraints, and explicit diagnostics
@@ -142,10 +158,10 @@ Recommended add-ons, after reliable checkpoints and budgets:
 - **Common Crawl CDX:** a complementary archive index. Store collection identifiers
   and query budgets; do not bulk-hammer the shared URL index. Its operator recommends
   the columnar index for bulk filtering. [Official index](https://index.commoncrawl.org/).
-- **Subfinder import adapter:** retain JSONL source attribution and source timestamps
-  rather than spawning opaque commands. Today, its plain host TXT output can already
-  be imported; JSONL is not supported by Atlas. Subfinder's documented `-oJ` and `-cs`
-  provide a useful future interchange format. [Official usage](https://docs.projectdiscovery.io/opensource/subfinder/usage).
+- **Subfinder import adapter:** 3.1 accepts JSONL host records and preserves source
+  attribution under `imported_*` fields. Keep this as an interchange boundary rather
+  than spawning opaque commands. Test more real export variants before claiming
+  full compatibility. [Official usage](https://docs.projectdiscovery.io/opensource/subfinder/usage).
 - **RapidDNS richer history:** preserve record type/value and assess documented export
   jobs for large authorized datasets. Account access and quotas still apply.
   [RapidDNS API](https://rapiddns.io/help/api).
@@ -168,8 +184,9 @@ were deleted. Keep payloads minimal so notifications do not leak query values.
 
 ## Best next development milestone
 
-Implement items 1–3 first: evidence correctness, resumable discovery and dependable
-samples. Follow with database backup/migrations and EXE CI before unattended use.
+Complete the remaining portions of items 1–3 first: host-budget coverage, resumable
+discovery and stronger monitoring context. Backup and EXE CI are now implemented;
+database migration management and repeatable unattended-run state remain important.
 Add Common Crawl and a historical timeline after those foundations are measured.
 Keep local archive dorks; there is no reliable promise of unrestricted search scraping.
 
@@ -181,6 +198,6 @@ review checked source behavior, current CLI help and official API references; it
 did not rerun arbitrary-target scans, validate paid-account credentials, benchmark
 large inventories or establish round-the-clock provider availability. The Windows
 CI matrix is configured, not evidence that a remote CI run passed in this review.
-Documentation checks resolved 43 local links across 11 Markdown files and parsed
-representative Atlas command examples. No executable or wheel was rebuilt; their
-release hashes remain unchanged.
+The original documentation-only pass resolved 43 local links and parsed representative
+CLI examples. The subsequent 3.1 reliability release adds regression tests and
+rebuilds the EXE/wheel; use its checksum manifest, not historical 3.0 hashes.
