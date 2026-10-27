@@ -1,4 +1,4 @@
-# Wayback Atlas 3.3
+# Wayback Recon 3.3
 
 A terminal workspace for finding historical URLs, collecting subdomains, and tracking
 how their DNS and web availability change over time. Formerly Dork Searcher.
