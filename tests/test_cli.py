@@ -1,74 +1,48 @@
+import io
+import json
+
+from rich.console import Console
+
 import src.cli as cli
+from src.workspace import result_directory
 
 
-def test_paint_adds_ansi_codes_when_color_is_enabled(monkeypatch):
-    monkeypatch.setattr(cli, "_COLOR_ENABLED", True)
-
-    assert cli._paint("ready", cli._Ansi.GREEN) == "\033[32mready\033[0m"
-
-
-def test_paint_returns_plain_text_when_color_is_disabled(monkeypatch):
-    monkeypatch.setattr(cli, "_COLOR_ENABLED", False)
-
-    assert cli._paint("ready", cli._Ansi.GREEN) == "ready"
+def test_output_directory_is_explicit_and_does_not_silently_fall_back(tmp_path):
+    path = tmp_path / "output"
+    assert result_directory(str(path)) == path
+    assert path.is_dir()
 
 
-def test_shared_header_does_not_repeat_authorization_notice(capsys):
-    cli.print_header()
-
-    assert "Authorization notice" not in capsys.readouterr().out
-
-
-def test_result_folder_defaults_to_desktop(monkeypatch, tmp_path):
-    desktop = tmp_path / "Desktop"
-    monkeypatch.setattr(cli, "_desktop_directory", lambda: desktop)
+def test_default_output_uses_desktop(monkeypatch, tmp_path):
+    monkeypatch.setattr("src.workspace.desktop_directory", lambda: tmp_path)
+    monkeypatch.delenv("WAYBACK_ATLAS_OUTPUT_DIR", raising=False)
     monkeypatch.delenv("DORK_SEARCHER_OUTPUT_DIR", raising=False)
-    monkeypatch.setattr(cli, "_RESULT_DIRECTORY", None)
-
-    result = cli.ensure_result_folder()
-
-    assert result == (desktop / "Dork_Searcher_Results").resolve()
-    assert result.is_dir()
+    assert result_directory() == tmp_path / "Wayback_Atlas_Results"
 
 
-def test_result_folder_falls_back_when_desktop_result_is_unavailable(monkeypatch, tmp_path):
-    desktop = tmp_path / "Desktop"
-    desktop.mkdir()
-    (desktop / "Dork_Searcher_Results").write_text(
-        "this file blocks directory creation", encoding="utf-8"
-    )
-    fallback_root = tmp_path / "local-app-data"
-    monkeypatch.setattr(cli, "_desktop_directory", lambda: desktop)
-    monkeypatch.setenv("LOCALAPPDATA", str(fallback_root))
-    monkeypatch.delenv("DORK_SEARCHER_OUTPUT_DIR", raising=False)
-    monkeypatch.setattr(cli, "_RESULT_DIRECTORY", None)
-
-    result = cli.ensure_result_folder()
-
-    assert result == (fallback_root / "Dork_Searcher" / "Results").resolve()
-    assert result.is_dir()
+def test_dashboard_has_new_workflows_without_retired_providers(monkeypatch, tmp_path):
+    stream = io.StringIO()
+    monkeypatch.setattr(cli, "console", Console(file=stream, width=100, color_system=None))
+    cli.dashboard(tmp_path)
+    output = stream.getvalue()
+    assert "WAYBACK ATLAS" in output
+    assert "Watch changes" in output
+    assert "Archive dork workbench" in output
+    assert "Google" not in output and "Dogpile" not in output
 
 
-def test_custom_dorks_are_scoped_and_persisted(monkeypatch, tmp_path):
-    monkeypatch.setattr(cli, "_RESULT_DIRECTORY", tmp_path)
+def test_import_and_export_work_end_to_end(tmp_path):
+    hosts = tmp_path / "hosts.txt"
+    hosts.write_text("dev.example.com\nold.example.com\n")
+    output = tmp_path / "output"
+    assert cli.main(["--output-dir", str(output), "import", "example.com", str(hosts)]) == 0
+    assert cli.main(["--output-dir", str(output), "export", "example.com"]) == 0
+    reports = list(output.glob("*.json"))
+    assert reports
+    data = json.loads(reports[0].read_text())
+    assert len(data["assets"]) == 2
+    assert all(a["latest"]["state"] == "unchecked" for a in data["assets"])
 
-    cli.save_custom_dork_templates(["inurl:graphql", 'site:{t} ext:env "DB_PASSWORD"'])
 
-    assert cli.load_custom_dork_templates() == [
-        "site:{t} (inurl:graphql)",
-        'site:{t} ext:env "DB_PASSWORD"',
-    ]
-
-
-def test_main_menu_uses_requested_sections(monkeypatch, capsys):
-    monkeypatch.setattr(cli, "clear_screen", lambda: None)
-    monkeypatch.setattr("builtins.input", lambda _prompt: "0")
-
-    cli.main_menu()
-
-    output = capsys.readouterr().out
-    assert "Dork_Search" in output
-    assert "Wayback / Parser" in output
-    assert "Sub-Domain Search" in output
-    assert "[6] Certificate Transparency Discovery" in output
-    assert "[8] Active HTTP Header/CORS Probe" in output
+def test_watch_without_inventory_gives_actionable_error(tmp_path):
+    assert cli.main(["--output-dir", str(tmp_path), "watch", "example.com"]) == 2

@@ -1,31 +1,27 @@
-# Quick start
+# Wayback Atlas quick start
 
-From a downloaded or cloned Windows project folder, use the launcher. It prefers the
-packaged executable and does not depend on a global Python installation:
+In CMD, from the project directory:
 
 ```cmd
-dork_searcher.bat
+wayback_atlas.bat
 ```
 
-For source development:
+Use menu **1** to discover hosts, **4** to check them, **5** to collect repeat
+samples, and **10** to export the inventory.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-dork_searcher
+Direct executable commands:
+
+```cmd
+Wayback_Atlas_App\wayback_atlas.exe discover example.com
+Wayback_Atlas_App\wayback_atlas.exe check example.com
+Wayback_Atlas_App\wayback_atlas.exe watch example.com --rounds 5 --interval 60
+Wayback_Atlas_App\wayback_atlas.exe dorks example.com "ext:js OR path:/api/"
 ```
 
-Useful non-interactive commands:
+Outputs default to Desktop\Wayback_Atlas_Results. The SQLite inventory persists
+between runs. Keep the terminal open while watching; Ctrl+C stops safely.
 
-```powershell
-dork-search --backend crtsh --targets example.com --output Result\ct.json
-dork-search --backend wayback --targets example.com --max-results 50000 --output Result\urls.json
-wayback-recon --targets example.com --output Result\recon.json
-http-metadata-probe --targets example.com --acknowledge-scope --output Result\probe.json
-```
+No-response observations are not proof that a hostname is permanently dead.
+Use only on assets you own or have permission to assess.
 
-Only assess explicitly authorized assets. The HTTP metadata probe is active even
-though it does not download response bodies.
-
-See [docs/README.md](docs/README.md) for the trust model and full command reference.
+See [README.md](README.md) for all flags, source requirements and result meanings.

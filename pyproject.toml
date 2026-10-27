@@ -3,10 +3,10 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dork-searcher"
-version = "2.0.0"
-description = "Scope-aware search, Wayback, CT discovery, and HTTP reconnaissance toolkit"
-readme = "docs/README.md"
+name = "wayback-atlas"
+version = "3.0.0"
+description = "Wayback and subdomain discovery with persistent DNS and HTTP availability history"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -21,7 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Information Technology",
     "Topic :: Internet",
     "Topic :: Security",
@@ -30,7 +30,8 @@ classifiers = [
 dependencies = [
     "requests>=2.32.4,<3",
     "httpx>=0.27,<1",
-    "playwright>=1.54,<2",
+    "rich>=13.9,<15",
+    "dnspython>=2.7,<3",
 ]
 
 [project.optional-dependencies]
@@ -45,6 +46,7 @@ build = [
 ]
 
 [project.scripts]
+wayback-atlas = "src.cli:main"
 dork_searcher = "src.cli:main"
 dork-search = "src.searcher:main"
 wayback-recon = "src.recon_pipeline:main"

@@ -66,3 +66,28 @@ def test_wayback_transport_failure_is_explicit():
     result = client.fetch("example.com", rate=0)
     assert not result.ok
     assert "failed after 1 attempts" in result.error
+
+
+def test_empty_cdx_is_valid_no_results():
+    assert _parse_cdx_payload([]) == ([], None)
+
+
+def test_capture_dates_and_page_budget_are_retained():
+    session = FakeSession(
+        [
+            FakeResponse(
+                [
+                    ["original", "timestamp", "statuscode", "mimetype"],
+                    ["https://old.example.com/", "20100102030405", "200", "text/html"],
+                    [],
+                    ["next-page"],
+                ]
+            )
+        ]
+    )
+    result = WaybackClient(session=session).fetch(
+        "example.com", include_subdomains=True, from_date="2000", max_pages=1, rate=0
+    )
+    assert result.truncated
+    assert result.captures[0]["timestamp"] == "20100102030405"
+    assert session.calls[0][1]["params"]["from"] == "2000"

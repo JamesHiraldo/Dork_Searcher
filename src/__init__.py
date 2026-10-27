@@ -1,8 +1,8 @@
 """Authorized search, archive, discovery, and HTTP reconnaissance tooling."""
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 __author__ = "Maydayx2"
-__description__ = "Authorized reconnaissance and endpoint research toolkit"
+__description__ = "Wayback Atlas: subdomain discovery and availability history"
 
 
 def main() -> int:

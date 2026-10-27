@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -17,7 +18,7 @@ else:  # pragma: no cover
 
 
 CDX_ENDPOINT = "https://web.archive.org/cdx/search/cdx"
-DEFAULT_USER_AGENT = "dork-searcher/2.0 (+https://github.com/Maydayx2/dork-searcher)"
+DEFAULT_USER_AGENT = "WaybackAtlas/3.0"
 
 
 class WaybackError(RuntimeError):
@@ -31,6 +32,7 @@ class WaybackResult:
     pages: int = 0
     truncated: bool = False
     error: str | None = None
+    captures: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -39,6 +41,8 @@ class WaybackResult:
 
 def _parse_cdx_payload(payload: Any) -> tuple[list[str], str | None]:
     """Parse CDX JSON rows and the optional resumption-key trailer."""
+    if payload == []:
+        return [], None
     if not isinstance(payload, list) or not payload:
         raise WaybackError("CDX returned an unexpected JSON document")
 
@@ -103,7 +107,9 @@ class WaybackClient:
                 if response.status_code == 429 or 500 <= response.status_code < 600:
                     retry_after = response.headers.get("Retry-After", "")
                     delay = (
-                        float(retry_after) if retry_after.isdigit() else self.backoff * (2**attempt)
+                        min(float(retry_after), 60.0)
+                        if retry_after.isdigit()
+                        else self.backoff * (2**attempt)
                     )
                     if attempt + 1 < self.retries:
                         time.sleep(delay)
@@ -125,11 +131,21 @@ class WaybackClient:
         max_urls: int = 50000,
         include_subdomains: bool = False,
         rate: float = 0.25,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        max_pages: int = 100,
     ) -> WaybackResult:
         if max_urls < 1:
             raise ValueError("max_urls must be greater than zero")
         if rate < 0:
             raise ValueError("rate cannot be negative")
+        if max_pages < 1:
+            raise ValueError("max_pages must be positive")
+        for value in (from_date, to_date):
+            if value and not re.fullmatch(r"\d{4}(?:\d{2}){0,5}", value):
+                raise ValueError("Archive dates must be YYYY through YYYYMMDDhhmmss")
+        if from_date and to_date and from_date.ljust(14, "0") > to_date.ljust(14, "9"):
+            raise ValueError("Archive start must not exceed archive end")
 
         normalized_target = normalize_hostname(target)
         query_target = (
@@ -138,15 +154,20 @@ class WaybackClient:
         params: dict[str, Any] = {
             "url": query_target,
             "output": "json",
-            "fl": "original",
+            "fl": "original,timestamp,statuscode,mimetype",
             "collapse": "urlkey",
             "limit": min(self.page_size, max_urls),
             "showResumeKey": "true",
         }
+        if from_date:
+            params["from"] = from_date
+        if to_date:
+            params["to"] = to_date
 
         result = WaybackResult(target=normalized_target)
         seen = set()
         resume_key: str | None = None
+        seen_keys: set[str] = set()
 
         try:
             while len(result.urls) < max_urls:
@@ -155,6 +176,12 @@ class WaybackClient:
                 payload = self._get_page(params)
                 page_urls, next_resume_key = _parse_cdx_payload(payload)
                 result.pages += 1
+                capture_by_url = {}
+                if payload:
+                    for row in payload[1:]:
+                        if isinstance(row, list) and len(row) == len(payload[0]):
+                            capture = dict(zip(payload[0], row, strict=True))
+                            capture_by_url[str(capture.get("original", ""))] = capture
 
                 for url in page_urls:
                     if url in seen:
@@ -165,6 +192,7 @@ class WaybackClient:
                         continue
                     seen.add(url)
                     result.urls.append(url)
+                    result.captures.append(capture_by_url.get(url, {"original": url}))
                     if len(result.urls) >= max_urls:
                         break
 
@@ -173,8 +201,16 @@ class WaybackClient:
                         params["limit"]
                     )
                     break
-                if not next_resume_key or next_resume_key == resume_key:
+                if not next_resume_key:
                     break
+                if next_resume_key in seen_keys:
+                    result.truncated = True
+                    result.error = "CDX repeated a pagination key; partial results retained"
+                    break
+                if result.pages >= max_pages:
+                    result.truncated = True
+                    break
+                seen_keys.add(next_resume_key)
                 resume_key = next_resume_key
                 if rate:
                     time.sleep(rate)

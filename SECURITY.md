@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are applied to the current 2.x release line.
+Security fixes are applied to the current 3.x release line.
 
 ## Reporting a vulnerability
 
@@ -12,7 +12,8 @@ target URLs in a public issue.
 
 ## Operational boundaries
 
-The search, archive, CT, and DNS workflows query third-party data sources. The HTTP
+Discovery queries third-party data sources. Atlas check/watch samples DNS and HTTP
+availability only when selected; it never performs ARP injection. The separate HTTP
 metadata probe is active and requires explicit scope acknowledgement. Private and
 local addresses, credential-bearing URLs, and out-of-scope redirects are blocked by
 default. These controls supplement—not replace—the authorization and rate limits of

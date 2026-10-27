@@ -1,16 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_all
+from pathlib import Path
+import ssl
 
 
-playwright_datas, playwright_binaries, playwright_hiddenimports = collect_all('playwright')
+project_root = str(Path(SPECPATH).parent)
+# Some Python distributions ship SSL policy data beside ssl.py. Preserve it
+# when freezing that runtime rather than weakening certificate validation.
+ssl_policy = Path(ssl.__file__).with_name('codex-rejected-cas.pem')
+runtime_data = [(str(ssl_policy), '.')] if ssl_policy.is_file() else []
 
 a = Analysis(
-    ['../src/cli.py'],
-    pathex=['src'],
-    binaries=playwright_binaries,
-    datas=playwright_datas,
-    hiddenimports=['scope', 'wayback', 'artifacts'] + playwright_hiddenimports,
+    [str(Path(project_root) / 'src' / 'app_entry.py')],
+    pathex=[project_root],
+    binaries=[],
+    datas=runtime_data,
+    hiddenimports=['dns.asyncbackend', 'dns._asyncio_backend'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -26,7 +31,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='dork_searcher',
+    name='wayback_atlas',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

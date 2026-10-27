@@ -1,532 +1,267 @@
-# Dork Searcher 2.0
+# Wayback Atlas 3.0
 
-[![CI](https://github.com/JamesHiraldo/Dork_Searcher/actions/workflows/ci.yml/badge.svg)](https://github.com/JamesHiraldo/Dork_Searcher/actions/workflows/ci.yml)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+A terminal workspace for finding historical URLs, collecting subdomains, and tracking
+how their DNS and web availability change over time. Formerly Dork Searcher.
 
-Dork Searcher is a scope-aware reconnaissance toolkit for authorized bug bounty,
-penetration-testing, and asset-inventory work. It combines search-engine dorks,
-Wayback Machine collection and parsing, Certificate Transparency discovery,
-DNSDumpster, structural hostname correlation, and bounded HTTP header/CORS checks in
-one interactive Windows application and a set of scriptable Python commands.
+Use only on assets you own or have permission to assess.
 
-> [!WARNING]
-> Use Dork Searcher only on assets you own or are explicitly authorized to assess.
-> Bug bounty scope, rate limits, and platform rules always take precedence.
+## What changed
 
-## Contents
+- A color terminal dashboard, progress indicators, inventory tables and scriptable commands.
+- Wayback CDX, crt.sh and Cert Spotter discovery, merged into a persistent SQLite inventory.
+- RapidDNS API integration and TXT/CSV/JSON imports; CompleteDNS nameserver history.
+- Repeated DNS and HTTP sampling, wildcard indicators, IP changes and intermittent candidates.
+- Offline archive dorks, custom templates and optional DuckDuckGo browser links.
+- Google and Dogpile backends removed. No Playwright or browser installation is needed.
+- JSON, spreadsheet-safe CSV and separate alive, down-observed and intermittent host lists.
 
-- [Highlights](#highlights)
-- [Interactive menu](#interactive-menu)
-- [Run the Windows executable](#run-the-windows-executable)
-- [Install from source](#install-from-source)
-- [Output files](#output-files)
-- [Custom dorks](#custom-dorks)
-- [Command-line tools and flags](#command-line-tools-and-flags)
-- [Usage examples](#usage-examples)
-- [API keys](#api-keys)
-- [How results are represented](#how-results-are-represented)
-- [Troubleshooting](#troubleshooting)
-- [Development and packaging](#development-and-packaging)
-- [Security and license](#security-and-license)
+## Start on Windows
 
-## Highlights
-
-- Google Programmable Search with API-side site restriction and pagination
-- DuckDuckGo-first search with rendered-page recovery, Dogpile fallback, and a
-  browser-rendered Brave last resort
-- Direct Dogpile diagnostics across both of its known result routes
-- Persistent custom dorks that remain tied to the selected target
-- Wayback CDX collection with retry handling and resumption-key pagination
-- Archived endpoint and parameter inventory with sensitive-value redaction
-- Passive subdomain enumeration combining `crt.sh` and Cert Spotter observations
-- DNSDumpster discovery using its API
-- Structural hostname cross-referencing instead of unsafe substring matching
-- Active HTTP security-header and CORS analysis with redirect and private-IP controls
-- Atomic JSON/CSV writes and spreadsheet formula-injection protection
-- Colorized interactive UI with automatic plain-text output when redirected
-- Standalone Windows executable plus installable Python entry points
-
-## Interactive menu
-
-The executable and the `dork_searcher` command open this menu:
-
-```text
-Dork_Search
-----------------------------------------
-1. Google (API Req)
-2. DuckDuckGo Search
-3. Dogpile Direct Search
-
-Wayback / Parser
-----------------------------------------
-4. Wayback CDX URL Collection
-5. Wayback Recon + Parameter Inventory
-
-Sub-Domain Search
-----------------------------------------
-6. Certificate Transparency Discovery
-7. DNSDumpster Discovery (API Req)
-
-CORS Check
-----------------------------------------
-8. Active HTTP Header/CORS Probe
-
-Other
-----------------------------------------
-9. Cross-Reference Existing Results
-10. View Dork Templates
-0. Exit
-```
-
-Google and DNSDumpster require API credentials. DuckDuckGo, Dogpile, Wayback, and
-Certificate Transparency do not require an API key.
-
-## Run the Windows executable
-
-The standalone executable is interactive. It does not accept the command-line flags
-described later in this README; those flags belong to the installed Python commands.
-
-### Command Prompt (CMD)
-
-Open Command Prompt, change to the packaged-application directory, and run it:
+From the project folder in CMD:
 
 ```cmd
-cd /d "C:\path\to\Dork_Searcher\Dork_Searcher_App"
-dork_searcher-2.0.0.exe
+wayback_atlas.bat
 ```
 
-For example, if it is on your Desktop:
+Or launch the packaged application directly:
 
 ```cmd
-cd /d "%USERPROFILE%\Desktop\Dork_Searcher\Dork_Searcher_App"
-dork_searcher-2.0.0.exe
+cd /d "C:\path\to\dork_searcher\Wayback_Atlas_App"
+wayback_atlas.exe
 ```
 
-From the repository root, you can instead run `dork_searcher.bat`. The launcher
-prefers the packaged EXE, then `.venv`, and only then a correctly configured global
-Python installation.
+The old `dork_searcher.bat` forwards to the new launcher. The launcher selects the
+Atlas executable first, then a project Python environment. Archived 2.0 binaries
+are retained under `legacy/` for recovery and are never selected.
 
-### PowerShell
-
-```powershell
-Set-Location "C:\path\to\Dork_Searcher\Dork_Searcher_App"
-.\dork_searcher-2.0.0.exe
-```
-
-### Verify the download
-
-Compare the executable hash with the value published for the release:
-
-```powershell
-Get-FileHash .\dork_searcher-2.0.0.exe -Algorithm SHA256
-```
-
-The current 2.0.0 executable has this SHA-256 value:
-
-```text
-F611301D374B476D3B37F1A9C5EC73308CDC460BEA76724EF41A5092DCC41A2C
-```
+Unlike the old EXE, the new EXE accepts the same subcommands and flags as the Python CLI.
 
 ## Install from source
 
-Python 3.10 through 3.13 is supported.
+Python 3.10+:
 
-### Windows PowerShell
-
-```powershell
-git clone https://github.com/JamesHiraldo/Dork_Searcher.git
-Set-Location Dork_Searcher
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
+```cmd
+python -m venv .venv-atlas
+.venv-atlas\Scripts\activate.bat
 python -m pip install -e "."
-dork_searcher
+python -m src.cli
 ```
 
-### Windows Command Prompt
+On Linux/macOS use `python3 -m venv .venv-atlas`, then
+`source .venv-atlas/bin/activate`. The installed command is `wayback-atlas`.
+Legacy `dork_searcher` and `dork-search` command names invoke the new interface.
+
+## Menu
+
+| Key | Workflow |
+| --- | --- |
+| 1 | Discover and merge Wayback + certificate sources |
+| 2 | Wayback archive, with date range |
+| 3 | Select CT, RapidDNS or CompleteDNS |
+| 4 | Sample current DNS/HTTP availability |
+| 5 | Watch availability across repeated samples |
+| 6 | Inspect the inventory |
+| 7 | Import discoveries |
+| 8 | Archive dork workbench and saved templates |
+| 9 | Open research resources |
+| 10 | Export the inventory and history |
+
+Discovery is passive with respect to the target: it queries third-party providers.
+Check/watch sends DNS queries and, unless `--dns-only` is selected, root-page GETs
+to the stored hosts. It reads response headers, closes the stream without collecting
+page bodies, and does not follow redirects. No administrator privileges are needed.
+
+## Recommended workflow
 
 ```cmd
-git clone https://github.com/JamesHiraldo/Dork_Searcher.git
-cd /d Dork_Searcher
-python -m venv .venv
-.venv\Scripts\activate.bat
-python -m pip install --upgrade pip
-python -m pip install -e "."
-dork_searcher
+wayback-atlas discover example.com
+wayback-atlas check example.com
+wayback-atlas watch example.com --rounds 12 --interval 300
+wayback-atlas inventory example.com
+wayback-atlas export example.com
 ```
 
-### Linux or macOS
+Repeat discovery later against the same output folder to find newly observed names.
+Watch resamples the inventory present at startup; it does not rediscover names
+mid-run. Use separate discover runs when you want the list refreshed.
 
-```bash
-git clone https://github.com/JamesHiraldo/Dork_Searcher.git
-cd Dork_Searcher
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e "."
-dork_searcher
-```
+`watch` runs in the foreground. Keep the terminal open. Ctrl+C stops it; each
+completed sample is saved immediately. The interval is a delay after a completed
+round, not an exact wall-clock schedule. Nothing is silently scheduled or installed.
 
-To install development tools, use `python -m pip install -e ".[dev]"`.
-
-### Browser support for resilient search
-
-Playwright is installed with the project. When DuckDuckGo blocks its lightweight
-HTML endpoint, Dork Searcher renders the current result page in Microsoft Edge or
-Google Chrome before falling back to Dogpile. Most Windows systems already have Edge.
-On a system without either browser, install Playwright Chromium once:
-
-```powershell
-python -m playwright install chromium
-```
-
-The Windows executable includes the browser-control runtime and uses the installed
-Edge browser; it does not bundle a second full browser.
-
-## Output files
-
-Interactive reports default to:
+## Commands and flags
 
 ```text
-Desktop\Dork_Searcher_Results
+wayback-atlas [--output-dir PATH] COMMAND
 ```
 
-The program resolves the real Windows Desktop path, including localized or OneDrive-
-redirected folders. If the Desktop is not writable, it falls back to:
+Place the global `--output-dir` option before the command. Run without a command
+for the dashboard. Every command supports `--help`.
 
-```text
-%LOCALAPPDATA%\Dork_Searcher\Results
-```
+| Command | Arguments and options |
+| --- | --- |
+| discover DOMAIN | `--sources wayback crtsh certspotter rapiddns completedns`; defaults to the first three |
+| | `--limit 5000`: maximum retained records per source |
+| | `--max-pages 20`: provider pagination ceiling |
+| | `--from-date YYYY`, `--to-date YYYY`: Wayback-only date filters, up to YYYYMMDDhhmmss |
+| check DOMAIN | `--dns-only`, `--concurrency 8`, `--timeout 5` |
+| watch DOMAIN | Same check flags; `--rounds 5`, `--interval 60` seconds |
+| inventory DOMAIN | Display stored hosts and latest state |
+| import DOMAIN FILE | TXT, CSV or JSON, up to 25 MiB |
+| export DOMAIN | Timestamped JSON, CSV and host lists |
+| dorks DOMAIN QUERY | Filter locally stored archived URLs |
+| resources | Print all four requested resource links |
 
-Set a different default directory before launching if desired:
+Concurrency is 1–50, timeout is greater than zero and at most 60 seconds,
+watch rounds are 1–10000 and the interval is at least 10 seconds.
+A batch probes up to two public addresses per host, trying both IP families when possible.
+Date and page ceilings intentionally mean partial archive coverage on large domains.
+
+Examples:
 
 ```cmd
-set DORK_SEARCHER_OUTPUT_DIR=D:\BugBounty\Reports
-dork_searcher-2.0.0.exe
+wayback-atlas --output-dir "D:\Recon\Example" discover example.com --sources wayback --from-date 2005 --to-date 2015 --limit 20000 --max-pages 50
+wayback-atlas --output-dir "D:\Recon\Example" discover example.com --sources crtsh certspotter
+wayback-atlas --output-dir "D:\Recon\Example" import example.com hosts.csv
+wayback-atlas --output-dir "D:\Recon\Example" watch example.com --dns-only --rounds 10 --interval 60
 ```
 
-JSON is the canonical evidence format. CSV is optional and sanitized for safer use in
-spreadsheet applications. Artifact writes are atomic, so an interrupted operation
-does not leave a partially written report.
+Unrelated domains from provider data and imports are excluded structurally; a result
+for `notexample.com` is not treated as a child of `example.com`. Enter any desired
+root domain—there is no hard-coded target allowlist or authorization ticket workflow.
 
-> [!IMPORTANT]
-> Reconnaissance output can contain sensitive URLs, parameters, hostnames, and program
-> data. The repository ignores local result folders, but you are still responsible
-> for storing and sharing reports according to the applicable program rules.
+## Your requested services
 
-## Custom dorks
+| Service | Integration | Requirements / meaning |
+| --- | --- | --- |
+| [CompleteDNS](https://completedns.com/dns-history/) | Nameserver event history via v2 API; menu link | `COMPLETEDNS_API_KEY`; nameserver changes are not proof of host uptime |
+| [RapidDNS](https://rapiddns.io/) | Paginated API records; export import; menu link | `RAPIDDNS_API_KEY`; official docs specify Pro/Max API access |
+| [Secret Finder](https://serene-agnesi-57a014.netlify.app/) | Explicit browser launch | Reachable JavaScript helper; no verified collector API |
+| [Pentest.bd / ReconNexus](https://pentest.bd/dorks/) | Explicit browser launch | External research/dork helper; no verified collector API |
 
-Select **10. View Dork Templates**, then:
-
-- press `A` to add one or more custom dorks;
-- press `R` to remove a custom dork;
-- press `0` to return to the main menu.
-
-Use `{t}` wherever the selected target should appear:
-
-```text
-site:{t} inurl:graphql
-site:{t} (ext:env OR ext:ini) "DB_PASSWORD"
-site:{t} intitle:"index of" (backup OR archive)
-```
-
-If a custom dork has no site restriction, Dork Searcher automatically wraps it with
-`site:{t}`. Custom templates are de-duplicated, persisted in
-`custom_dorks.txt` inside the results directory, and included in interactive Google,
-DuckDuckGo, and Dogpile searches.
-
-## Command-line tools and flags
-
-Installing the Python package provides four entry points:
-
-| Command | Purpose |
-|---|---|
-| `dork_searcher` | Open the interactive menu; no command-line flags |
-| `dork-search` | Run search, archive, CT, or DNS discovery non-interactively |
-| `wayback-recon` | Build a Wayback endpoint and parameter inventory |
-| `http-metadata-probe` | Run bounded active header and CORS checks |
-
-Use `<command> --help` to view the parser-generated reference for the installed
-version.
-
-### `dork-search`
-
-```text
-dork-search --backend BACKEND --targets DOMAIN [DOMAIN ...] --output FILE [options]
-```
-
-| Flag | Required | Description |
-|---|---:|---|
-| `--backend` | Yes | `google`, `wayback`, `duckduckgo`, `dogpile`, `dnsdumpster`, `crtsh`, or the legacy `c99subdomain` alias |
-| `--targets` | Yes | One or more authorized domain names |
-| `--output` | Yes | JSON output path |
-| `--csv` | No | Optional CSV output path |
-| `--api-key` | Backend-specific | Google or DNSDumpster API key; environment variable preferred |
-| `--cse-id` | Google only | Google Programmable Search Engine ID |
-| `--rate` | No | Seconds between requests; default `1.0` |
-| `--max-results` | No | Per-query result ceiling |
-| `--include-subdomains` | No | Include child hosts in Wayback collection |
-| `--cross-ref` | No | Discovery JSON file to structurally cross-reference |
-| `-h`, `--help` | No | Display command help |
-
-### `wayback-recon`
-
-```text
-wayback-recon --targets DOMAIN [DOMAIN ...] --output FILE [options]
-```
-
-| Flag | Required | Description |
-|---|---:|---|
-| `--targets` | Yes | One or more authorized domain names |
-| `--output` | Yes | JSON report path |
-| `--csv` | No | Optional CSV report path |
-| `--rate` | No | Seconds between CDX requests; default `0.5` |
-| `--max-urls` | No | Maximum archived URLs per target; default `50000` |
-| `--include-subdomains` | No | Include child hosts in CDX collection |
-| `--include-sensitive-values` | No | Preserve token-like archived values instead of redacting them |
-| `-h`, `--help` | No | Display command help |
-
-### `http-metadata-probe`
-
-This command is active: it sends GET requests but streams headers without consuming
-response bodies. Either `--targets` or `--urls-file` is required.
-
-```text
-http-metadata-probe (--targets DOMAIN [...] | --urls-file FILE) \
-  --output FILE --acknowledge-scope [options]
-```
-
-| Flag | Required | Description |
-|---|---:|---|
-| `--targets` | One input mode | Build common URLs for one or more domains |
-| `--urls-file` | One input mode | Read one authorized absolute URL per line |
-| `--output` | Yes | JSON report path |
-| `--csv` | No | Optional CSV report path |
-| `--concurrency` | No | Concurrent workers; default `8`, maximum `50` |
-| `--timeout` | No | Per-request timeout in seconds; default `15` |
-| `--max-redirects` | No | Redirect ceiling; default `5`, maximum `10` |
-| `--test-cors` | No | Send an `Origin` header and classify the response |
-| `--origin` | No | Origin value used by the CORS test; default `https://example.com` |
-| `--allowed-target` | No | Override the hostname allowlist; repeat for every permitted initial and redirect host |
-| `--allow-subdomains` | No | Permit redirects to child hosts of authorized targets |
-| `--allow-private` | No | Permit private/local destinations for an owned lab |
-| `--acknowledge-scope` | Yes | Confirm that all active targets are authorized |
-| `-h`, `--help` | No | Display command help |
-
-## Usage examples
-
-### DuckDuckGo search
-
-DuckDuckGo is the primary provider for this backend. Empty or blocked results fall
-through to a browser-rendered DuckDuckGo page and then Dogpile, with Brave used only
-as a final browser-rendered rescue provider. Dogpile direct mode also tests both
-`/search` and `/serp`; an HTTP 403 from both is reported as an upstream Dogpile/
-CloudFront failure rather than as an empty result set.
+Credentials are read from environment variables and are not saved to reports:
 
 ```cmd
-dork-search --backend duckduckgo --targets example.com --max-results 30 ^
-  --output Result\duckduckgo.json --csv Result\duckduckgo.csv
+set RAPIDDNS_API_KEY=your-key
+set COMPLETEDNS_API_KEY=your-key
+wayback-atlas discover example.com --sources rapiddns completedns
 ```
 
-### Google Programmable Search
+Keys may consume your provider quota when you explicitly select that source.
+CompleteDNS data is attached to the root domain; external nameserver hostnames are
+not imported as target subdomains. Missing keys, rate limits and challenge pages
+produce source errors, not fake empty successes. Other sources continue.
 
-Prefer environment variables so secrets are not placed directly in shell history:
+Reference contracts: [RapidDNS API](https://rapiddns.io/help/api),
+[CompleteDNS v2](https://completedns.com/api/documentation/v2),
+[Internet Archive CDX](https://github.com/internetarchive/wayback/tree/master/wayback-cdx-server).
+
+## Dorks without scraper failures
+
+Recommendation: use **local archive filtering** as the reliable automated path.
+It has no search-engine CAPTCHA or API quota once URLs are collected:
 
 ```cmd
-set DORK_SEARCHER_API_KEY=your-google-api-key
-set GOOGLE_CSE_ID=your-search-engine-id
-dork-search --backend google --targets example.com ^
-  --output Result\google.json
+wayback-atlas dorks example.com "ext:js"
+wayback-atlas dorks example.com "path:/api/ -ext:png"
+wayback-atlas dorks example.com "param:redirect OR param:url"
+wayback-atlas dorks example.com "host:dev.example.com"
 ```
 
-### Wayback URL collection
+Terms separated by spaces are ANDed; `OR` joins groups; `-term` excludes matches.
+Quoted phrases are supported. Fields are `host:`, `path:`, `ext:` and `param:`.
+These inspect URL strings and parameter names, not archived page bodies. They are
+not a full Google query-language implementation.
 
-```cmd
-dork-search --backend wayback --targets example.com --include-subdomains ^
-  --max-results 50000 --output Result\wayback.json --csv Result\wayback.csv
-```
+Menu 8 can save custom templates in `custom_dorks.txt` or create a target-scoped
+DuckDuckGo URL and open it at your request. Public search engines retain their own
+rate limits, operator behavior and bot checks. There is no honest promise of
+unrestricted automated dork scraping. Google/Dogpile scraping is not included.
 
-### Wayback parameter inventory
+## Understanding historical, alive, dead and intermittent results
 
-```cmd
-wayback-recon --targets example.com --include-subdomains --max-urls 50000 ^
-  --output Result\recon.json --csv Result\recon.csv
-```
+| Label | What the observation actually establishes |
+| --- | --- |
+| First/last seen | When this inventory first/last collected the name, not when it was created/deleted |
+| Archived evidence | A URL was present in the selected CDX sample; historical status is not current status |
+| unchecked | Discovered, but no availability sample yet |
+| online | An HTTP response arrived; 401, 403, 404 and 500 still prove a responding service |
+| tls_error | A TLS certificate validation failure indicates a responding TLS endpoint |
+| dns_only | DNS resolves, but HTTP was not requested |
+| nxdomain | The resolver returned NXDOMAIN at sampling time |
+| no_address | No A/AAAA answer in this observation |
+| unreachable | Selected addresses did not yield HTTP responses; this is not proof of permanent death |
+| unknown | DNS timeout, SERVFAIL or resolver error; excluded from transition inference |
+| private_address | Resolved only to non-public addresses; HTTP sampling skipped |
+| intermittent candidate | At least two observed HTTP or DNS state transitions in the latest 100 samples |
+| wildcard_possible | The address overlapped a random-name DNS control; shared hosting can also do this |
 
-Potential token, credential, session, and key values are redacted by default. Only
-use `--include-sensitive-values` when the artifact will be stored securely.
+DNS-only sampling records DNS transitions separately. Unknown samples interrupt
+transition inference. Address changes are reported separately: IP rotation alone
+does not prove an outage. Sampling from one machine cannot establish randomness,
+global uptime, or why a service is unreachable. Exported availability percentages
+describe the usable observations in the sample window, not an SLA.
 
-### Certificate Transparency subdomain discovery
+A wildcard certificate is evidence for a DNS suffix, not proof that every possible
+name exists. Likewise, old CT/Wayback evidence does not establish current ownership,
+DNS resolution or a takeover vulnerability.
 
-```cmd
-dork-search --backend crtsh --targets example.com --max-results 5000 ^
-  --output Result\certificate-transparency.json
-```
+## Output and recovery
 
-This workflow combines names observed by `crt.sh` and Cert Spotter. The apex domain
-is excluded from subdomain results. `verified: false` means an item was observed in a
-third-party source but was not actively DNS-verified; it does not mean the request
-failed. A populated `error` field represents an actual backend failure.
+Default: `Desktop\Wayback_Atlas_Results`, using the real Windows Desktop location.
+Automatic fallback: `%LOCALAPPDATA%\WaybackAtlas\Results`, then the home directory.
 
-### DNSDumpster discovery
+Set `WAYBACK_ATLAS_OUTPUT_DIR` or pass `--output-dir` to use a fixed project folder.
+The previous `DORK_SEARCHER_OUTPUT_DIR` variable remains recognized. An explicit
+unwritable path gives an error rather than silently selecting a different database.
 
-```cmd
-set DORK_SEARCHER_API_KEY=your-dnsdumpster-api-key
-dork-search --backend dnsdumpster --targets example.com ^
-  --output Result\dnsdumpster.json
-```
+Files include:
 
-### HTTP header and CORS probe
+- `inventory.sqlite3`: persistent hosts, evidence, provider runs and complete check history.
+- `DOMAIN_TIMESTAMP.json`: source evidence, recent samples, errors, archive summary and trends.
+- `DOMAIN_TIMESTAMP.csv`: flat host inventory with spreadsheet formula protection.
+- `*_hosts.txt`, `*_alive.txt`, `*_down_observed.txt`, `*_intermittent.txt`.
+- `archive_matches.json`: latest local query results (replaced by the next local query).
+- `custom_dorks.txt`: saved templates.
 
-```cmd
-http-metadata-probe --targets example.com --acknowledge-scope --test-cors ^
-  --origin https://researcher.example --output Result\probe.json ^
-  --csv Result\probe.csv
-```
+JSON reports include the latest 100 checks per host and latest 100 provider runs;
+the database retains the full history. Back up the database only after closing
+the application, or use SQLite's backup facility. Source query failures never
+delete previously discovered hosts. Interrupted checks retain completed samples.
 
-The active probe rejects private, loopback, link-local, and reserved destinations by
-default. Redirects are checked before each request and must remain within the supplied
-hostname scope. Use `--allowed-target` for a separate authorized redirect host,
-`--allow-subdomains` for child hosts, and `--allow-private` only in an owned lab.
+Potentially sensitive query parameter values are redacted in archived URLs.
+Reports can still contain private research context: keep output folders out of Git.
+Existing Dork Searcher results can be imported; nothing is automatically deleted.
 
-## API keys
+## Improvements to prioritize next
 
-### Google Programmable Search
+1. Repeat discovery daily and watch confirmed assets over several days; a few samples
+   are insufficient to establish intermittent behavior.
+2. Compare observations from a second permitted network/resolver to separate local
+   connectivity problems from target failures.
+3. Split large archive jobs into year ranges to reduce bias from URL-sorted limits.
+4. Import independent discovery exports to increase coverage; no single index is complete.
+5. Manually investigate long-lived CNAMEs and ownership changes. Do not equate an old
+   hostname, DNS failure or cloud-provider CNAME with a confirmed takeover.
+6. Add scheduled report comparisons and notifications only after baselining expected
+   maintenance, wildcard behavior and rate limits.
 
-Google mode requires both an API key and a Programmable Search Engine ID. Supply them
-through interactive hidden input, flags, or these environment variables:
-
-```cmd
-set DORK_SEARCHER_API_KEY=your-google-api-key
-set GOOGLE_CSE_ID=your-search-engine-id
-```
-
-### DNSDumpster
-
-DNSDumpster mode requires an API key. The application sends it through the documented
-`X-API-Key` request header. Use hidden interactive input or
-`DORK_SEARCHER_API_KEY`.
-
-Avoid committing credentials, embedding them in custom dorks, or publishing result
-files containing private program data.
-
-## How results are represented
-
-Search artifacts use a consistent evidence model:
-
-| Field | Meaning |
-|---|---|
-| `query` | Query or target that produced the row |
-| `title` | Result title or observed hostname |
-| `url` | Result URL |
-| `snippet` | Provider context or evidence note |
-| `source` | Backend that supplied the result |
-| `result_type` | `observed`, `candidate`, or `error` |
-| `verified` | Whether the tool actively verified the item; search observations normally remain `false` |
-| `error` | Backend error message, otherwise empty |
-
-- **Observed** means a third-party search index, archive, CT log, or DNS source
-  reported the item. It does not prove that the asset is currently live.
-- **Candidate** means a generated name that still requires separate validation.
-- **Error** preserves a backend failure in the artifact for auditability. It is not
-  equivalent to a successful search with zero findings.
-
-## Troubleshooting
-
-### The executable opens and immediately closes
-
-Launch it from CMD so the window and any error message remain visible:
-
-```cmd
-cd /d "C:\path\to\Dork_Searcher"
-dork_searcher-2.0.0.exe
-```
-
-### `Destination hostname is outside the authorized scope`
-
-The active probe encountered a redirect to a different hostname. If that destination
-is also authorized, use repeatable `--allowed-target` flags for both the original and
-redirect hostnames in command-line mode, or enable the appropriate child-subdomain
-redirect option in the interactive workflow.
-
-### `Result` or output path access is denied
-
-Interactive output normally goes to `Desktop\Dork_Searcher_Results`. If Windows
-blocks that location, the application uses `%LOCALAPPDATA%\Dork_Searcher\Results`.
-You can also set `DORK_SEARCHER_OUTPUT_DIR` to a directory you control.
-
-### A search backend returns an error row
-
-HTML-based providers can change markup, rate-limit automated requests, or return a
-challenge page. Increase the delay, retry later, and inspect the row's `source` and
-`error` fields. DuckDuckGo mode automatically attempts its fallback chain.
-
-### Certificate Transparency returns few results
-
-CT logs only contain names present on public certificates. A small or empty result is
-not proof that no subdomains exist. DNSDumpster, Wayback, search dorks, and authorized
-asset data can provide complementary coverage.
-
-### Disable terminal colors
-
-Set the standard `NO_COLOR` variable before launching:
-
-```cmd
-set NO_COLOR=1
-dork_searcher-2.0.0.exe
-```
+This is a tested 3.0 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
 
 ## Development and packaging
 
-Install the development dependencies:
-
 ```powershell
-python -m pip install -e ".[dev]"
+.\.venv-atlas\Scripts\python.exe -m pip install -e ".[dev,build]"
+.\scripts\verify.ps1 -PythonCommand ".\.venv-atlas\Scripts\python.exe"
+.\scripts\build_windows.ps1 -PythonCommand ".\.venv-atlas\Scripts\python.exe"
 ```
 
-Run the complete validation suite:
+The build emits `Wayback_Atlas_App\wayback_atlas.exe` and a versioned Python wheel.
+No browser engine or packet-injection driver is bundled.
+Tests mock DNS/providers and use synthetic availability sequences.
 
-```powershell
-python -m pytest -q
-python -m ruff check src tests
-python -m mypy src
-```
+The older parameter-analysis command `wayback-recon` and HTTP-header command
+`http-metadata-probe` remain available for compatibility; see their `--help`.
+They are no longer the main menu.
 
-On Windows, the repository also provides:
-
-```powershell
-.\scripts\verify.ps1
-```
-
-Build Python distributions:
-
-```powershell
-python -m pip install build
-python -m build
-```
-
-Build the standalone Windows executable:
-
-```powershell
-python -m pip install -e ".[build]"
-python -m PyInstaller --clean --noconfirm config\dork_searcher.spec
-```
-
-CI validates Python 3.10, 3.12, and 3.13 on Windows and publishes build artifacts for
-each workflow run.
-
-## Security and license
-
-Report security issues through GitHub's private Security Advisory flow. Do not place
-API keys, authentication material, private bug bounty findings, or sensitive target
-URLs in a public issue. See [SECURITY.md](SECURITY.md) for the full policy.
-
-Dork Searcher is available under the [MIT License](LICENSE).
-
-Additional documentation:
-
-- [Complete technical guide](docs/README.md)
-- [Windows executable guide](docs/WINDOWS_EXE_GUIDE.md)
-- [Installation guide](docs/INSTALL.md)
-- [Wayback recon notes](docs/README_RECON.md)
+MIT license. See [LICENSE](LICENSE).
