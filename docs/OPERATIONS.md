@@ -1,6 +1,6 @@
 # Operations, data and troubleshooting
 
-Applies to Wayback Atlas 3.2.0. Commands below run in CMD from the repository
+Applies to Wayback Atlas 3.3.0. Commands below run in CMD from the repository
 root. In PowerShell prefix the launcher with `.\`. Use only authorized targets.
 
 ## Keep a consistent workspace
@@ -142,6 +142,15 @@ Two observed HTTP or DNS transitions flag an intermittent candidate. Inspect sam
 times and possible local network failures before interpreting that flag.
 
 `discover`, `resume`, `import`, `check`, `watch` and `export` write timestamped reports.
+Each export creates `reports/DOMAIN/UTC_TIMESTAMP_UNIQUE_ID/` with `report.json`,
+`report.html`, `inventory.csv`, `hosts.txt`, `alive.txt`, `down_observed.txt` and `intermittent.txt`.
+Open `report.html` in a browser for the offline summary. All hosts appear; expandable
+previews show 20 evidence records and 5 recent samples each. Use JSON for all exported
+evidence. No scripts or external resources are loaded; research text is escaped.
+The database remains at the output root; existing exports are not automatically moved.
+Long or Windows-reserved target names use filesystem-safe folder names. The CLI prints
+the actual report path. The JSON report is written last; a snapshot folder without
+`report.json` is incomplete and can be regenerated with `export DOMAIN`.
 `inventory` displays a maximum of 200 rows. `dorks` replaces `archive_matches.json`.
 Ctrl+C retains completed samples but can interrupt the final report export; run
 `export` afterwards. Source failure never automatically deletes prior discoveries.

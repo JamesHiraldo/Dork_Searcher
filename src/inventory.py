@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,8 @@ from urllib.parse import parse_qsl, urlsplit
 
 from .artifacts import atomic_write_text, save_csv, save_json
 from .discovery import DiscoveryResult
+from .html_report import render_html
+from .scope import normalize_hostname
 
 
 def utc_now() -> str:
@@ -285,10 +289,35 @@ class Inventory:
         }
 
     def export(self, target: str, directory: Path) -> Path:
+        target = normalize_hostname(target)
         report = self.report(target)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        base = directory / f"{target}_{stamp}"
-        save_json(str(base) + ".json", report)
+        root = directory.expanduser().resolve()
+        # Leave room for snapshot names and atomic-write temporary filenames on Windows.
+        folder_limit = min(80, 170 - len(str(root))) if os.name == "nt" else 80
+        if folder_limit < 16:
+            raise ValueError(
+                "Output path is too long for report folders; choose a shorter --output-dir"
+            )
+        folder = re.sub(r"[^a-z0-9.-]", "_", target)
+        if folder != target or len(folder) > folder_limit:
+            folder = (
+                folder[: folder_limit - 11] + "-" + hashlib.sha256(target.encode()).hexdigest()[:10]
+            )
+        reserved = {
+            "con",
+            "prn",
+            "aux",
+            "nul",
+            *(f"com{i}" for i in range(1, 10)),
+            *(f"lpt{i}" for i in range(1, 10)),
+        }
+        if folder.split(".")[0] in reserved:
+            folder = "_" + folder
+        destination = root / "reports" / folder / f"{stamp}_{uuid.uuid4().hex[:8]}"
+        if not destination.resolve().is_relative_to(root):
+            raise ValueError("Report folder resolves outside the output directory")
+        destination.mkdir(parents=True, exist_ok=False)
         fields = [
             "hostname",
             "sources",
@@ -318,7 +347,7 @@ class Inventory:
                     "addresses": ";".join(asset["latest"].get("addresses", [])),
                 }
             )
-        save_csv(str(base) + ".csv", fields, rows)
+        save_csv(str(destination / "inventory.csv"), fields, rows)
         for label, hosts in {
             "hosts": [a["hostname"] for a in report["assets"]],
             "alive": [
@@ -336,6 +365,10 @@ class Inventory:
             ],
         }.items():
             atomic_write_text(
-                str(base) + f"_{label}.txt", "\n".join(hosts) + ("\n" if hosts else "")
+                str(destination / f"{label}.txt"), "\n".join(hosts) + ("\n" if hosts else "")
             )
-        return Path(str(base) + ".json")
+        atomic_write_text(str(destination / "report.html"), render_html(report))
+        # Write the main report last: its presence marks a completed snapshot bundle.
+        path = destination / "report.json"
+        save_json(str(path), report)
+        return path

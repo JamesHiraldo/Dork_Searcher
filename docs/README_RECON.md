@@ -3,7 +3,7 @@
 These are separate Python entry points retained for compatibility. They are not
 subcommands of `wayback_atlas.exe` and are not part of the Atlas dashboard.
 Install from source or wheel and activate that Python environment first; see
-[installation](INSTALL.md). They write the explicit paths supplied by the user,
+[installation](../README.md#install-from-source). They write the explicit paths supplied by the user,
 not the Atlas Desktop inventory, and do not update `inventory.sqlite3`.
 
 Use only targets you own or have permission to assess. The command-specific scope

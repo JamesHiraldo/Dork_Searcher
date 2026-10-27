@@ -25,6 +25,9 @@ Thumbs.db
 # Build artifacts
 build/
 dist/
+Wayback_Atlas_App/
+*.exe
+*.whl
 *.spec.bak
 
 # Recon output can contain sensitive target data
@@ -35,3 +38,14 @@ Wayback_Atlas_Results/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+reports/
+archive_matches.json
+custom_dorks.txt
+.env
+.env.*
+!.env.example
+*.pem
+*.key

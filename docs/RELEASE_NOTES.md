@@ -1,5 +1,37 @@
 # Wayback Atlas release notes
 
+## 3.3.0 — offline HTML and public-tree cleanup
+
+October 27, 2026 (America/New_York).
+
+- Each report bundle now includes `report.html`, with summary counts, every host,
+  expandable evidence previews, source errors and companion export links. HTML is
+  script-free, escapes untrusted text and uses no external resources or target fetches.
+  JSON remains the complete exported evidence source; HTML previews 20 evidence
+  records and 5 samples per host. JSON is still written last as the completion marker.
+- Build outputs move to ignored `dist/`; the launcher and CI use that location.
+  Distribute executable/wheel/checksums as release attachments rather than Git source.
+- Consolidated overlapping quick-start/install/index/structure/assessment guides into
+  the README and focused maintenance docs. Removed duplicate requirements metadata;
+  `pyproject.toml` is the dependency authority.
+- Added `scripts/check_repo.py` for current-tree artifact/link checks and limited
+  credential-signature detection. It does not scan history or ignored research data.
+
+## 3.2.1 — grouped report folders
+
+October 27, 2026 (America/New_York).
+
+- Every inventory export now has its own `reports/DOMAIN/UTC_TIMESTAMP_UNIQUE_ID/`
+  directory containing JSON, CSV and hostname lists, instead of loose root-level files.
+- Automatic discovery/resume/import/check/watch exports use the same layout as menu 10.
+- Filenames inside each bundle are `report.json`, `inventory.csv`, `hosts.txt`,
+  `alive.txt`, `down_observed.txt` and `intermittent.txt`. The main JSON is written last
+  as a completion marker; interrupted bundles remain distinguishable.
+- Windows-reserved and long target names use safe folder names. Separate snapshots
+  never overwrite one another. The returned/printed path points to the new JSON report.
+- The shared SQLite database, resume checkpoints and existing loose exports are not
+  moved or deleted. Scripts consuming old flat filename patterns must use the new layout.
+
 ## 3.2.0 — resumable discovery and Common Crawl
 
 October 26, 2026 (America/New_York). Still beta; provider availability and completeness
@@ -87,4 +119,4 @@ foreground-only; no tasks or services are automatically installed.
 
 Paid-key integrations are regression-tested with fixtures, not live-account tested.
 See [operations](OPERATIONS.md), [development](DEVELOPMENT.md) and the
-[remaining roadmap](ASSESSMENT_AND_ROADMAP.md).
+[remaining development priorities](../README.md#improvements-to-prioritize-next).

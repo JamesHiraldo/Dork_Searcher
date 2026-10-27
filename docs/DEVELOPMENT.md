@@ -70,11 +70,18 @@ a completion gate for this intentionally budget-limited smoke. Check `paused` ve
 
 The script installs build requirements, builds the EXE with
 `config/dork_searcher.spec`, builds the wheel, and writes SHA-256 sums. It replaces
-same-named current artifacts in `Wayback_Atlas_App/`; preserve a needed release
+same-named current artifacts in ignored `dist/`; preserve a needed release
 before rebuilding. Normal build caches return under `build/`. The spec includes
 the asynchronous DNS backend and applicable SSL runtime policy data without
 disabling certificate validation. Dependency ranges mean builds are not guaranteed
 byte-for-byte reproducible. There is currently no release-signing step.
+
+If Windows blocks replacing an existing EXE, do not stop another research session
+or change security settings. Build side-by-side with
+`-OutputDirectory "dist\alternate"`, then test it with
+`python scripts/release_smoke.py --exe dist/alternate/wayback_atlas.exe`.
+Launch that EXE directly: the normal batch launcher prefers `dist/wayback_atlas.exe`
+and does not automatically select side-by-side builds.
 
 ## Release checklist
 
@@ -89,6 +96,18 @@ byte-for-byte reproducible. There is currently no release-signing step.
    observations and do not turn failure into a false empty-success result.
 7. Publish source, release notes and checksums together. Do not include test databases,
    provider keys or research results. Claim only the platforms actually tested.
+8. Run `python scripts/check_repo.py` before staging. It checks tracked plus nonignored
+   untracked files that exist, skips locally deleted paths, and never prints credential
+   values. Inspect `git status`/the staged diff too. This lightweight check covers a few
+   token signatures, not every possible secret or previous Git commits. Use your
+   hosting platform's secret scanning and review history before changing visibility.
+
+The public tree keeps source, tests, scripts, packaging/CI, README, license/security
+policy and focused operations/recovery/development/legacy-command/release guides.
+Do not commit `dist`, build/test caches, virtual environments, databases or research
+exports. A local virtual environment and its package metadata are useful development
+state, not files to publish. Ignoring a file does not remove it from existing Git history.
+No repository publication or history rewrite is performed by these scripts.
 
 CI now includes a Windows EXE build and offline smoke job after source tests.
 Run it locally with `python scripts/release_smoke.py` after building. It exercises

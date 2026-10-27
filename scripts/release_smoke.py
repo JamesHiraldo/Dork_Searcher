@@ -13,8 +13,8 @@ from pathlib import Path
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exe", default="Wayback_Atlas_App/wayback_atlas.exe")
-    parser.add_argument("--expected-version", default="3.2.0")
+    parser.add_argument("--exe", default="dist/wayback_atlas.exe")
+    parser.add_argument("--expected-version", default="3.3.0")
     args = parser.parse_args()
     executable = Path(args.exe).resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="atlas-release-smoke-") as temporary:
@@ -57,6 +57,14 @@ def main() -> None:
         with closing(sqlite3.connect(backup)) as database:
             assert database.execute("SELECT count(*) FROM assets").fetchone()[0] == 2
         run("export", "example.com")
+        reports = list((directory / "reports" / "example.com").glob("*/report.json"))
+        assert len(reports) == 2  # Import auto-export and explicit export, separate bundles.
+        assert all((path.parent / "inventory.csv").is_file() for path in reports)
+        assert all(
+            "WAYBACK ATLAS" in (path.parent / "report.html").read_text(encoding="utf-8")
+            for path in reports
+        )
+        assert not list(directory.glob("*.csv"))
         # Seed a durable mid-page fixture, then exercise the frozen resume code with no network.
         job = "offline-smoke-checkpoint"
         with (

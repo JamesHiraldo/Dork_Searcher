@@ -1,13 +1,12 @@
-# Wayback Atlas 3.2
+# Wayback Atlas 3.3
 
 A terminal workspace for finding historical URLs, collecting subdomains, and tracking
 how their DNS and web availability change over time. Formerly Dork Searcher.
 
 Use only on assets you own or have permission to assess.
 
-[Quick start](QUICKSTART.md) · [Installation](docs/INSTALL.md) ·
 [Operations and troubleshooting](docs/OPERATIONS.md) ·
-[Assessment and roadmap](docs/ASSESSMENT_AND_ROADMAP.md) ·
+[Resumable discovery](docs/RESUMABLE_DISCOVERY.md) ·
 [Development](docs/DEVELOPMENT.md)
 
 ## What changed
@@ -19,13 +18,15 @@ Use only on assets you own or have permission to assess.
 - Repeated DNS and HTTP sampling, wildcard indicators, IP changes and intermittent candidates.
 - Offline archive dorks, custom templates and optional DuckDuckGo browser links.
 - Google and Dogpile backends removed. No Playwright or browser installation is needed.
-- JSON, spreadsheet-safe CSV and separate alive, down-observed and intermittent host lists.
+- Offline HTML reports, JSON, spreadsheet-safe CSV and categorized hostname lists.
 - Local `doctor` diagnostics, full SQLite backups and `--version` identification.
 - JSONL/NDJSON imports with original-source evidence, optional Cert Spotter authentication,
   strict discovery exit codes and per-host deadlines. See [release notes](docs/RELEASE_NOTES.md).
 
 ## Start on Windows
 
+Install from source below, or build/download the Windows executable and place it
+in `dist/`. Release binaries are generated artifacts, not committed source files.
 From the project folder in CMD:
 
 ```cmd
@@ -35,18 +36,17 @@ wayback_atlas.bat
 In PowerShell use `.\wayback_atlas.bat`. Examples below using `wayback-atlas`
 assume a source/wheel installation with its environment activated. EXE-only users
 can substitute `wayback_atlas.bat` in CMD or `.\wayback_atlas.bat` in PowerShell.
-No Python installation is required for the supplied Windows executable.
+No Python installation is required to run a built Windows executable.
 
 Or launch the packaged application directly:
 
 ```cmd
-cd /d "C:\path\to\dork_searcher\Wayback_Atlas_App"
+cd /d "C:\path\to\dork_searcher\dist"
 wayback_atlas.exe
 ```
 
 The old `dork_searcher.bat` forwards to the new launcher. The launcher selects the
-Atlas executable first, then a project Python environment. Obsolete 2.0 binaries
-have been removed; previous tracked releases remain available in Git history.
+`dist/wayback_atlas.exe` first, then a project Python environment.
 
 Unlike the old EXE, the new EXE accepts the same subcommands and flags as the Python CLI.
 
@@ -140,7 +140,7 @@ for the dashboard. Every command supports `--help`.
 | watch DOMAIN | Same check flags; `--rounds 5`, `--interval 60` seconds |
 | inventory DOMAIN | Display stored hosts and latest state |
 | import DOMAIN FILE | TXT, CSV, JSON, JSONL or NDJSON, up to 25 MiB |
-| export DOMAIN | Timestamped JSON, CSV and host lists |
+| export DOMAIN | Timestamped HTML, JSON, CSV and host lists |
 | dorks DOMAIN QUERY | Filter locally stored archived URLs |
 | resources | Print all four requested resource links |
 | doctor | Local runtime/TLS/DNS/database checks; no network requests or key disclosure |
@@ -188,7 +188,7 @@ archive. Select more indexes for broader history; date filters do not automatica
 select older indexes. See the [official index](https://index.commoncrawl.org/) and
 [resumable discovery guide](docs/RESUMABLE_DISCOVERY.md) for coverage and recovery limits.
 
-## Your requested services
+## Additional research services
 
 | Service | Integration | Requirements / meaning |
 | --- | --- | --- |
@@ -284,11 +284,23 @@ unwritable path gives an error rather than silently selecting a different databa
 Files include:
 
 - `inventory.sqlite3`: hosts, evidence, check history, discovery jobs and resumable page buffers.
-- `DOMAIN_TIMESTAMP.json`: source evidence, recent samples, errors, archive summary and trends.
-- `DOMAIN_TIMESTAMP.csv`: flat host inventory with spreadsheet formula protection.
-- `*_hosts.txt`, `*_alive.txt`, `*_down_observed.txt`, `*_intermittent.txt`.
+- `reports/DOMAIN/TIMESTAMP_ID/report.json`: evidence, samples, errors, archive summary and trends.
+- `reports/DOMAIN/TIMESTAMP_ID/report.html`: readable offline report; open it in a browser.
+- `reports/DOMAIN/TIMESTAMP_ID/inventory.csv`: flat inventory with spreadsheet formula protection.
+- The same snapshot folder contains `hosts.txt`, `alive.txt`, `down_observed.txt` and `intermittent.txt`.
 - `archive_matches.json`: latest local query results (replaced by the next local query).
 - `custom_dorks.txt`: saved templates.
+
+Every automatic or manual report export gets its own target-grouped snapshot folder.
+The shared SQLite database stays at the output root so history and resume progress
+remain available. Existing loose exports are left untouched. `report.json` is written
+last; a folder without it may be an incomplete export after an error/interruption.
+
+HTML includes every host, summary counts, provider activity and expandable evidence.
+Evidence previews show the first 20 records and latest 5 samples per host; JSON
+retains the full exported evidence and up to 100 samples. HTML has no JavaScript,
+remote fonts/images or automatic target requests. Research text is escaped and
+archived URLs are displayed as text. Keep the bundle together for companion links.
 
 JSON reports include the latest 100 checks per host and latest 100 provider runs;
 the database retains the full history. Back up the database only after closing
@@ -322,9 +334,9 @@ Custom output directories are not automatically covered by this repository's
 6. Add scheduled report comparisons and notifications only after baselining expected
    maintenance, wildcard behavior and rate limits.
 
-This is a tested 3.2 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
-The [code-based assessment](docs/ASSESSMENT_AND_ROADMAP.md) separates existing
-capabilities from proposed changes and provides an implementation order and test criteria.
+This is a tested 3.3 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
+Development priorities remain unique-host budgets, stronger monitoring context,
+streaming exports and full archive timelines.
 
 ## Development and packaging
 
@@ -334,11 +346,16 @@ capabilities from proposed changes and provides an implementation order and test
 .\scripts\build_windows.ps1 -PythonCommand ".\.venv-atlas\Scripts\python.exe"
 ```
 
-The build emits `Wayback_Atlas_App\wayback_atlas.exe` and a versioned Python wheel.
+The build emits `dist\wayback_atlas.exe` and a versioned Python wheel.
 It also writes `SHA256SUMS.txt`. The launcher prefers the EXE even after source edits;
 run `python -m src.cli` to test source changes, then rebuild for distribution.
 No browser engine or packet-injection driver is bundled.
 Tests mock DNS/providers and use synthetic availability sequences.
+Publish binaries/checksums as release attachments, not Git source. The current-tree
+check `python scripts/check_repo.py` rejects generated/private artifacts, checks
+local documentation links and flags a few common credential signatures. It is not
+a comprehensive secret scan and does not inspect Git history. Review history before
+making an existing repository public; do not upload the entire working folder as a ZIP.
 
 The older parameter-analysis command `wayback-recon` and HTTP-header command
 `http-metadata-probe` remain available for compatibility; see their `--help`.

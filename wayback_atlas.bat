@@ -1,7 +1,7 @@
 @echo off
 setlocal
 pushd "%~dp0"
-if exist "Wayback_Atlas_App\wayback_atlas.exe" goto run_exe
+if exist "dist\wayback_atlas.exe" goto run_exe
 if exist ".venv-atlas\Scripts\python.exe" goto atlas_python
 if exist ".venv\Scripts\python.exe" goto local_python
 where python >nul 2>nul
@@ -33,7 +33,7 @@ set "ATLAS_EXIT=%ERRORLEVEL%"
 goto done
 
 :run_exe
-"%CD%\Wayback_Atlas_App\wayback_atlas.exe" %*
+"%CD%\dist\wayback_atlas.exe" %*
 set "ATLAS_EXIT=%ERRORLEVEL%"
 goto done
 

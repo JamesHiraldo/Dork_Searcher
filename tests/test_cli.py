@@ -38,7 +38,8 @@ def test_import_and_export_work_end_to_end(tmp_path):
     output = tmp_path / "output"
     assert cli.main(["--output-dir", str(output), "import", "example.com", str(hosts)]) == 0
     assert cli.main(["--output-dir", str(output), "export", "example.com"]) == 0
-    reports = list(output.glob("*.json"))
+    reports = list((output / "reports" / "example.com").glob("*/report.json"))
+    assert not list(output.glob("*.json"))
     assert reports
     data = json.loads(reports[0].read_text())
     assert len(data["assets"]) == 2

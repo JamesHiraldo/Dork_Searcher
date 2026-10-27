@@ -24,6 +24,8 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Dependency consistency
         run: python -m pip check
+      - name: Public repository hygiene
+        run: python scripts/check_repo.py
       - name: Tests
         run: python -m pytest -q
       - name: Ruff
@@ -66,7 +68,7 @@ jobs:
         with:
           name: windows-release
           path: |
-            Wayback_Atlas_App/wayback_atlas.exe
-            Wayback_Atlas_App/wayback_atlas-3.2.0-py3-none-any.whl
-            Wayback_Atlas_App/SHA256SUMS.txt
+            dist/wayback_atlas.exe
+            dist/wayback_atlas-3.3.0-py3-none-any.whl
+            dist/SHA256SUMS.txt
 

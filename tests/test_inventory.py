@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from src.discovery import DiscoveryResult
 from src.inventory import Inventory, availability_trend
 
@@ -33,7 +35,7 @@ def test_roundtrip_retains_history_and_source_errors(tmp_path):
         assert report["provider_runs"][0]["status"] == "error"
         exported = store.export("example.com", tmp_path)
         assert json.loads(exported.read_text())["assets"][0]["latest"]["state"] == "online"
-        assert list(tmp_path.glob("*_intermittent.txt"))[0].read_text().strip() == "api.example.com"
+        assert (exported.parent / "intermittent.txt").read_text().strip() == "api.example.com"
 
 
 def test_dns_only_is_not_reported_as_http_alive():
@@ -61,5 +63,55 @@ def test_exports_do_not_overwrite_previous_snapshot(tmp_path):
         first = store.export("example.com", tmp_path)
         second = store.export("example.com", tmp_path)
         assert first != second
-        assert first.name.startswith("example.com_")
+        assert first.name == "report.json"
+        assert first.parent != second.parent
+        assert first.parent.parent == tmp_path / "reports" / "example.com"
         assert first.exists() and second.exists()
+
+
+def test_export_bundles_are_isolated_and_database_unchanged(tmp_path):
+    with Inventory(tmp_path / "inventory.sqlite3") as store:
+        store.merge("example.com", DiscoveryResult("crtsh", [{"hostname": "api.example.com"}]))
+        store.merge("example.org", DiscoveryResult("crtsh", [{"hostname": "api.example.org"}]))
+        first = store.export("example.com", tmp_path)
+        second = store.export("example.org", tmp_path)
+        expected = {
+            "report.html",
+            "report.json",
+            "inventory.csv",
+            "hosts.txt",
+            "alive.txt",
+            "intermittent.txt",
+            "down_observed.txt",
+        }
+        assert {p.name for p in first.parent.iterdir()} == expected
+        assert {p.name for p in second.parent.iterdir()} == expected
+        assert (first.parent / "hosts.txt").read_text().strip() == "api.example.com"
+        assert (second.parent / "hosts.txt").read_text().strip() == "api.example.org"
+        assert store.hosts("example.com") == ["api.example.com"]
+        assert not list(tmp_path.glob("*.json"))
+        assert not list(tmp_path.glob("*.csv"))
+
+
+@pytest.mark.parametrize("target", ["con", "con.example.com", "a" * 63 + "." + "b" * 63 + ".com"])
+def test_export_target_folders_are_windows_safe(tmp_path, target):
+    with Inventory(tmp_path / "inventory.sqlite3") as store:
+        exported = store.export(target, tmp_path)
+        assert exported.exists()
+        assert len(exported.parent.parent.name) <= 91
+        assert exported.parent.parent.name.split(".")[0] != "con"
+
+
+def test_export_rejects_path_as_target(tmp_path):
+    with Inventory(tmp_path / "inventory.sqlite3") as store, pytest.raises(ValueError):
+        store.export("../escape", tmp_path)
+
+
+def test_failed_bundle_has_no_completed_report(monkeypatch, tmp_path):
+    def fail(*args):
+        raise OSError("synthetic full disk")
+
+    monkeypatch.setattr("src.inventory.save_csv", fail)
+    with Inventory(tmp_path / "inventory.sqlite3") as store, pytest.raises(OSError):
+        store.export("example.com", tmp_path)
+    assert not list(tmp_path.rglob("report.json"))
