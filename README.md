@@ -5,6 +5,11 @@ how their DNS and web availability change over time. Formerly Dork Searcher.
 
 Use only on assets you own or have permission to assess.
 
+[Quick start](QUICKSTART.md) · [Installation](docs/INSTALL.md) ·
+[Operations and troubleshooting](docs/OPERATIONS.md) ·
+[Assessment and roadmap](docs/ASSESSMENT_AND_ROADMAP.md) ·
+[Development](docs/DEVELOPMENT.md)
+
 ## What changed
 
 - A color terminal dashboard, progress indicators, inventory tables and scriptable commands.
@@ -23,6 +28,11 @@ From the project folder in CMD:
 wayback_atlas.bat
 ```
 
+In PowerShell use `.\wayback_atlas.bat`. Examples below using `wayback-atlas`
+assume a source/wheel installation with its environment activated. EXE-only users
+can substitute `wayback_atlas.bat` in CMD or `.\wayback_atlas.bat` in PowerShell.
+No Python installation is required for the supplied Windows executable.
+
 Or launch the packaged application directly:
 
 ```cmd
@@ -31,8 +41,8 @@ wayback_atlas.exe
 ```
 
 The old `dork_searcher.bat` forwards to the new launcher. The launcher selects the
-Atlas executable first, then a project Python environment. Archived 2.0 binaries
-are retained under `legacy/` for recovery and are never selected.
+Atlas executable first, then a project Python environment. Obsolete 2.0 binaries
+have been removed; previous tracked releases remain available in Git history.
 
 Unlike the old EXE, the new EXE accepts the same subcommands and flags as the Python CLI.
 
@@ -65,6 +75,7 @@ Legacy `dork_searcher` and `dork-search` command names invoke the new interface.
 | 8 | Archive dork workbench and saved templates |
 | 9 | Open research resources |
 | 10 | Export the inventory and history |
+| 0 | Exit |
 
 Discovery is passive with respect to the target: it queries third-party providers.
 Check/watch sends DNS queries and, unless `--dns-only` is selected, root-page GETs
@@ -116,6 +127,11 @@ Concurrency is 1–50, timeout is greater than zero and at most 60 seconds,
 watch rounds are 1–10000 and the interval is at least 10 seconds.
 A batch probes up to two public addresses per host, trying both IP families when possible.
 Date and page ceilings intentionally mean partial archive coverage on large domains.
+`--limit` counts retained evidence records, not unique hosts or downloaded bytes.
+`--max-pages` applies to paginated Wayback, Cert Spotter and RapidDNS requests;
+it does not paginate crt.sh or CompleteDNS. `--timeout` applies to individual
+DNS/HTTP operations, not the entire job. There is no Atlas requests-per-second flag.
+Date strings accept 4, 6, 8, 10, 12 or 14 digits; supply a real calendar date.
 
 Examples:
 
@@ -156,6 +172,12 @@ Reference contracts: [RapidDNS API](https://rapiddns.io/help/api),
 [CompleteDNS v2](https://completedns.com/api/documentation/v2),
 [Internet Archive CDX](https://github.com/internetarchive/wayback/tree/master/wayback-cdx-server).
 
+The current Cert Spotter adapter uses unauthenticated requests. Its documented
+endpoint lists unexpired issuances, not a complete historical certificate archive;
+unauthenticated use is limited. Atlas does not yet expose a Cert Spotter API-key
+setting. See [SSLMate's contract](https://sslmate.com/help/reference/ct_search_api_v1)
+and the [provider roadmap](docs/ASSESSMENT_AND_ROADMAP.md).
+
 ## Dorks without scraper failures
 
 Recommendation: use **local archive filtering** as the reliable automated path.
@@ -177,6 +199,9 @@ Menu 8 can save custom templates in `custom_dorks.txt` or create a target-scoped
 DuckDuckGo URL and open it at your request. Public search engines retain their own
 rate limits, operator behavior and bot checks. There is no honest promise of
 unrestricted automated dork scraping. Google/Dogpile scraping is not included.
+Use local fields such as `path:` only in the local filter. Browser mode forwards
+your query unchanged after adding `site:DOMAIN`; it does not translate local fields
+into DuckDuckGo operators. Use plain keywords in browser mode when uncertain.
 
 ## Understanding historical, alive, dead and intermittent results
 
@@ -232,6 +257,10 @@ delete previously discovered hosts. Interrupted checks retain completed samples.
 Potentially sensitive query parameter values are redacted in archived URLs.
 Reports can still contain private research context: keep output folders out of Git.
 Existing Dork Searcher results can be imported; nothing is automatically deleted.
+Importing an Atlas JSON report imports host records, not the complete database
+history. It is not a backup restore. See [import formats and backup procedure](docs/OPERATIONS.md).
+Custom output directories are not automatically covered by this repository's
+`.gitignore`; check before committing any research files.
 
 ## Improvements to prioritize next
 
@@ -247,6 +276,8 @@ Existing Dork Searcher results can be imported; nothing is automatically deleted
    maintenance, wildcard behavior and rate limits.
 
 This is a tested 3.0 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
+The [code-based assessment](docs/ASSESSMENT_AND_ROADMAP.md) separates existing
+capabilities from proposed changes and provides an implementation order and test criteria.
 
 ## Development and packaging
 
@@ -257,11 +288,14 @@ This is a tested 3.0 beta, not a claim of exhaustive discovery or guaranteed pro
 ```
 
 The build emits `Wayback_Atlas_App\wayback_atlas.exe` and a versioned Python wheel.
+It also writes `SHA256SUMS.txt`. The launcher prefers the EXE even after source edits;
+run `python -m src.cli` to test source changes, then rebuild for distribution.
 No browser engine or packet-injection driver is bundled.
 Tests mock DNS/providers and use synthetic availability sequences.
 
 The older parameter-analysis command `wayback-recon` and HTTP-header command
 `http-metadata-probe` remain available for compatibility; see their `--help`.
 They are no longer the main menu.
+Their separate flags and output paths are documented in [retained commands](docs/README_RECON.md).
 
 MIT license. See [LICENSE](LICENSE).

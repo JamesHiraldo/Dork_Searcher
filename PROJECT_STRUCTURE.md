@@ -14,6 +14,28 @@
 - `src/searcher.py`: legacy command alias and hostname correlation helper
 - `src/app_entry.py`: Windows executable entry point
 - `Wayback_Atlas_App/`: current EXE, wheel and checksums
-- `legacy/Dork_Searcher_App/`: recoverable previous binary release
 - `scripts/`: verification and packaging
 - `tests/`: mocked provider, parser, history, probe and CLI tests
+
+## Supporting files
+
+- `wayback_atlas.bat`: Windows launcher; prefers the bundled EXE.
+- `dork_searcher.bat`, `src/dork_searcher.py`: retained compatibility entry points.
+- `config/dork_searcher.spec`: current Atlas PyInstaller build specification; historical filename retained.
+- `pyproject.toml`: dependencies, installed commands, tool configuration and package metadata.
+- `.github/workflows/ci.yml`: Windows Python test matrix and wheel/source-distribution packaging.
+- `scripts/demo.py`: synthetic, offline dashboard preview and sample exports.
+- `scripts/provider_smoke.py`: explicit live example.com provider/DNS/HTTP checks.
+- `docs/`: installation, operations, retained commands, development and roadmap.
+
+## Generated files versus research data
+
+`.venv-atlas/` is the active local development environment. `*.egg-info/`, `build/`,
+`dist/`, test/type/lint caches and `__pycache__/` are generated and can return after
+installation, testing or packaging. Do not remove an environment used by a running
+process. The obsolete `.venv/` and archived 2.0 release folders were removed.
+
+`Result/` is retained for compatibility and existing research. Normal Atlas runs
+use the selected output directory, usually Desktop/Wayback_Atlas_Results, not
+the repository. Preserve research data separately from disposable test fixtures.
+See [operations](docs/OPERATIONS.md) before backing up or moving an inventory.
