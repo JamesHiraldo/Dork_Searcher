@@ -33,7 +33,7 @@ wayback-atlas --help
 Alternatively, install the supplied wheel in your chosen Python environment:
 
 ```cmd
-python -m pip install Wayback_Atlas_App\wayback_atlas-3.1.0-py3-none-any.whl
+python -m pip install Wayback_Atlas_App\wayback_atlas-3.2.0-py3-none-any.whl
 wayback-atlas --help
 ```
 

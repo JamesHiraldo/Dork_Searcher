@@ -13,7 +13,7 @@ import requests
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
-def read_json(response: requests.Response, max_bytes: int = MAX_RESPONSE_BYTES) -> Any:
+def read_body(response: requests.Response, max_bytes: int = MAX_RESPONSE_BYTES) -> bytearray:
     """Count decompressed bytes, including chunked replies; never buffer an unlimited body."""
     length = response.headers.get("Content-Length", "")
     if length.isdigit() and int(length) > max_bytes:
@@ -26,10 +26,23 @@ def read_json(response: requests.Response, max_bytes: int = MAX_RESPONSE_BYTES) 
         if len(body) + len(chunk) > max_bytes:
             raise ValueError("Provider response exceeds the 16 MiB limit; narrow the query")
         body.extend(chunk)
+    return body
+
+
+def read_json(response: requests.Response, max_bytes: int = MAX_RESPONSE_BYTES) -> Any:
+    body = read_body(response, max_bytes)
     try:
         return json.loads(body)
     except (ValueError, UnicodeError, RecursionError):
         raise ValueError("Provider returned invalid JSON (possibly a challenge page)") from None
+
+
+def read_json_lines(response: requests.Response) -> list[Any]:
+    body = read_body(response)
+    try:
+        return [json.loads(line) for line in body.splitlines() if line.strip()]
+    except (ValueError, UnicodeError, RecursionError):
+        raise ValueError("Provider returned invalid JSONL (possibly a challenge page)") from None
 
 
 def retry_delay(value: str, fallback: float, maximum: float = 30) -> float:

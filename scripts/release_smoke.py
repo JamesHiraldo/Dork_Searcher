@@ -14,7 +14,7 @@ from pathlib import Path
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--exe", default="Wayback_Atlas_App/wayback_atlas.exe")
-    parser.add_argument("--expected-version", default="3.1.0")
+    parser.add_argument("--expected-version", default="3.2.0")
     args = parser.parse_args()
     executable = Path(args.exe).resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="atlas-release-smoke-") as temporary:
@@ -40,6 +40,9 @@ def main() -> None:
 
         assert args.expected_version in run("--version")
         assert "doctor" in run("--help")
+        assert "--cc-index" in run("discover", "--help")
+        assert "--max-pages" in run("resume", "--help")
+        assert json.loads(run("runs", "--json")) == []
         assert "TLS" in run("doctor")
         hosts = directory / "hosts.txt"
         hosts.write_text(
@@ -54,13 +57,59 @@ def main() -> None:
         with closing(sqlite3.connect(backup)) as database:
             assert database.execute("SELECT count(*) FROM assets").fetchone()[0] == 2
         run("export", "example.com")
+        # Seed a durable mid-page fixture, then exercise the frozen resume code with no network.
+        job = "offline-smoke-checkpoint"
+        with (
+            closing(sqlite3.connect(directory / "inventory.sqlite3")) as database,
+            database,
+        ):
+            database.execute(
+                "INSERT INTO discovery_jobs VALUES (?,?,?,?,?)",
+                (
+                    job,
+                    1,
+                    "example.com",
+                    "2026-10-26",
+                    json.dumps({"sources": ["commoncrawl"]}),
+                ),
+            )
+            pending = {
+                "records": [{"hostname": "staged.example.com", "crawl_index": "CC-MAIN-2026-10"}],
+                "offset": 0,
+                "metadata": {},
+                "cursor": {},
+                "done": True,
+            }
+            state = {
+                "status": "paused",
+                "cursor": {},
+                "pending": pending,
+                "pages": 1,
+                "records": 0,
+                "error": None,
+            }
+            database.execute(
+                "INSERT INTO discovery_checkpoints VALUES (?,?,?,?,?)",
+                (
+                    job,
+                    "commoncrawl",
+                    0,
+                    "2026-10-26",
+                    json.dumps(state),
+                ),
+            )
+        assert "complete" in run("resume", job, "--strict")
+        assert "staged.example.com" in run("inventory", "example.com")
+        assert (
+            json.loads(run("runs", "--json"))[0]["sources"]["commoncrawl"]["status"] == "complete"
+        )
         output = run(input_text="\ninvalid\n11\n1\n\n0\n")
         assert "(o)" in output and "Please type one" in output and "TLS" in output
         assert "0/1/2/3" not in output
         assert "Input closed" in run(input_text="")
     print(
         "Packaged release smoke passed: version, TLS/DNS doctor, import, inventory, "
-        "dorks, backup, export, UI and EOF."
+        "dorks, backup, export, checkpoint resume, Common Crawl flags, UI and EOF."
     )
 
 

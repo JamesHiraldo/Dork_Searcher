@@ -1,21 +1,21 @@
 # Engineering assessment and improvement roadmap
 
-Baseline review: 3.0.0. Updated for 3.1.0 on October 26, 2026 (America/New_York).
+Baseline review: 3.0.0. Updated for 3.2.0 on October 26, 2026 (America/New_York).
 This is a functionality/reliability review, not an exhaustive security audit or a
 benchmark. The original gaps below describe the 3.0 baseline. The status table
 distinguishes delivered improvements from remaining recommendations; do not treat
 proposed commands as available features. No accounts or schedules were created.
 
-## Delivery status in 3.1
+## Delivery status in 3.2
 
 | Area | Implemented | Remaining |
 | --- | --- | --- |
 | Providers | Full-record deduplication, streamed response limits, schema errors, counters, optional Cert Spotter key | Unique-host-first budgets, cached cooldowns, broader schema fixtures |
-| Collection recovery | Full SQLite backup | Persisted pagination checkpoints and page-level commits |
+| Collection recovery | Full backup, versioned runs, durable cursors/buffers, atomic evidence commits, resume UI/CLI | Large-run benchmarks, provider snapshot limitations, opt-in retention |
 | Monitoring | Per-host deadline/isolation, round IDs, finish time/duration | Resolver/vantage identity, network-health controls, confirmation thresholds |
 | Database | Consistent backup and integrity check | Versioned migrations, automated restore, retention, paginated reports |
 | Release | Doctor/version, frozen-EXE smoke script and CI job | Reproducible dependency constraints, signing, wider OS validation |
-| Interchange | JSONL/NDJSON, host fields, imported provenance/DNS evidence | Common Crawl and richer timeline views |
+| Interchange | JSONL/NDJSON imports, host fields, provenance/DNS evidence; paginated Common Crawl with pinned collections | Richer timeline views and more interchange fixtures |
 
 See [release notes](RELEASE_NOTES.md) for current behavior and compatibility.
 
@@ -62,22 +62,22 @@ Acceptance: repeated certificates do not starve unique names; A/AAAA/CNAME evide
 at one timestamp survives; malformed bodies, huge bodies, 401/403/429 and timeouts
 give bounded, credential-free source errors without cancelling other sources.
 
-### 2. Incremental discovery and persistent checkpoints — high priority
+### 2. Incremental discovery and persistent checkpoints — delivered in 3.2
 
-Evidence: [wayback.py](../src/wayback.py) and [discovery.py](../src/discovery.py)
-keep pagination cursors only in memory. Every run starts again. A limited query
-can repeatedly retrieve the same initial records, missing later/new names.
-[cli.py](../src/cli.py) merges a source only after its collection returns, so an
-interruption mid-provider can lose that source's in-flight results.
+The 3.0/3.1 CLI collected entire sources before merging, with in-memory-only cursors.
+The main 3.2 CLI now uses [checkpoints.py](../src/checkpoints.py) and
+[discovery_pages.py](../src/discovery_pages.py): versioned immutable queries, durable
+page staging, mid-page offsets, atomic evidence/cursor commits, repeated-cursor guards
+and optimistic concurrency. Menu 12 and `runs`/`resume` expose saved progress.
 
-Recommendation: store a run ID, source/query/date/budget fingerprint, page cursor
-and page-level evidence atomically. Support resume, intentional refresh and a
-coverage summary. Track incomplete versus completed runs separately. Handle
-expired/invalid cursors by a visible, idempotent restart rather than silent omission.
+Tests cover failed-page retries, interrupted commits, backup/resume and stale writers.
+Query parameters cannot change on resume; processing budgets can. A fresh `discover`
+is an intentional refresh. Invalid/expired cursors stop visibly and require retry or
+a new run, without silent resets. Provider-side mutations remain a coverage limit.
 
-Acceptance: interrupt after page N, resume without duplicate evidence or lost pages;
-changing the query/date range does not reuse an incompatible checkpoint. New-name
-counts are based on inventory differences, not certificate timestamps.
+Remaining: benchmark large runs/exports, measure long-lived provider cursor behavior,
+and add opt-in retention/cooldown policies. The legacy collector and `wayback-recon`
+remain non-resumable. See [the recovery contract](RESUMABLE_DISCOVERY.md).
 
 ### 3. More trustworthy intermittent-availability analysis — high priority
 
@@ -153,10 +153,10 @@ revision. Test Python/Linux/macOS separately before claiming platform validation
 
 ### 7. Broader passive coverage through supported interfaces — medium priority
 
-Recommended add-ons, after reliable checkpoints and budgets:
+Delivered coverage and recommended follow-ups:
 
-- **Common Crawl CDX:** a complementary archive index. Store collection identifiers
-  and query budgets; do not bulk-hammer the shared URL index. Its operator recommends
+- **Common Crawl CDX:** delivered in 3.2, with pinned collection identifiers, bounded
+  JSONL pages and per-invocation budgets. Do not bulk-hammer the shared URL index. Its operator recommends
   the columnar index for bulk filtering. [Official index](https://index.commoncrawl.org/).
 - **Subfinder import adapter:** 3.1 accepts JSONL host records and preserves source
   attribution under `imported_*` fields. Keep this as an interchange boundary rather
@@ -184,10 +184,10 @@ were deleted. Keep payloads minimal so notifications do not leak query values.
 
 ## Best next development milestone
 
-Complete the remaining portions of items 1–3 first: host-budget coverage, resumable
-discovery and stronger monitoring context. Backup and EXE CI are now implemented;
+Prioritize host-budget coverage, stronger monitoring context and report performance.
+Resumable discovery, Common Crawl, backup and EXE CI are now implemented;
 database migration management and repeatable unattended-run state remain important.
-Add Common Crawl and a historical timeline after those foundations are measured.
+Measure these foundations before adding a full historical timeline or notifications.
 Keep local archive dorks; there is no reliable promise of unrestricted search scraping.
 
 ## Validation boundaries
@@ -200,4 +200,7 @@ large inventories or establish round-the-clock provider availability. The Window
 CI matrix is configured, not evidence that a remote CI run passed in this review.
 The original documentation-only pass resolved 43 local links and parsed representative
 CLI examples. The subsequent 3.1 reliability release adds regression tests and
-rebuilds the EXE/wheel; use its checksum manifest, not historical 3.0 hashes.
+rebuilds the EXE/wheel. Version 3.2 adds checkpoint/crawl regression coverage and a
+bounded live Common Crawl example.com check; its buffer was resumed without network
+access. Use the current checksum manifest, not historical 3.0/3.1 hashes. Paid providers
+remain fixture-tested, not live-account verified. Remote CI was not run from this task.

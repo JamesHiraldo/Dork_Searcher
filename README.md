@@ -1,4 +1,4 @@
-# Wayback Atlas 3.1
+# Wayback Atlas 3.2
 
 A terminal workspace for finding historical URLs, collecting subdomains, and tracking
 how their DNS and web availability change over time. Formerly Dork Searcher.
@@ -13,7 +13,8 @@ Use only on assets you own or have permission to assess.
 ## What changed
 
 - A spider ASCII banner, grouped color menus, progress indicators and scriptable commands.
-- Wayback CDX, crt.sh and Cert Spotter discovery, merged into a persistent SQLite inventory.
+- Wayback CDX, Common Crawl, crt.sh and Cert Spotter discovery in a persistent SQLite inventory.
+- Resumable discovery: durable per-source cursors, mid-page buffers and atomic evidence commits.
 - RapidDNS API integration and TXT/CSV/JSON imports; CompleteDNS nameserver history.
 - Repeated DNS and HTTP sampling, wildcard indicators, IP changes and intermittent candidates.
 - Offline archive dorks, custom templates and optional DuckDuckGo browser links.
@@ -21,7 +22,7 @@ Use only on assets you own or have permission to assess.
 - JSON, spreadsheet-safe CSV and separate alive, down-observed and intermittent host lists.
 - Local `doctor` diagnostics, full SQLite backups and `--version` identification.
 - JSONL/NDJSON imports with original-source evidence, optional Cert Spotter authentication,
-  strict discovery exit codes and per-host deadlines. See [3.1 release notes](docs/RELEASE_NOTES.md).
+  strict discovery exit codes and per-host deadlines. See [release notes](docs/RELEASE_NOTES.md).
 
 ## Start on Windows
 
@@ -68,9 +69,9 @@ Legacy `dork_searcher` and `dork-search` command names invoke the new interface.
 
 | Key | Workflow |
 | --- | --- |
-| 1 | Discover and merge Wayback + certificate sources |
+| 1 | Discover and merge Wayback + certificate sources + Common Crawl |
 | 2 | Wayback archive, with date range |
-| 3 | Select CT, RapidDNS or CompleteDNS |
+| 3 | Select CT, RapidDNS, CompleteDNS or Common Crawl |
 | 4 | Sample current DNS/HTTP availability |
 | 5 | Watch availability across repeated samples |
 | 6 | Inspect the inventory |
@@ -79,6 +80,7 @@ Legacy `dork_searcher` and `dork-search` command names invoke the new interface.
 | 9 | Open research resources |
 | 10 | Export the inventory and history |
 | 11 | Local diagnostics and full inventory backup |
+| 12 | List saved discovery runs and resume one |
 | 0 | Exit |
 
 Type a menu number and press Enter; the prompt no longer repeats the entire choice
@@ -103,6 +105,9 @@ wayback-atlas export example.com
 ```
 
 Repeat discovery later against the same output folder to find newly observed names.
+Each `discover` creates a fresh run. To continue an interrupted/limited run instead,
+use `runs` to find its full ID and `resume RUN_ID`, or choose menu **12**.
+Completed sources are skipped; unfinished sources continue from saved progress.
 Watch resamples the inventory present at startup; it does not rediscover names
 mid-run. Use separate discover runs when you want the list refreshed.
 
@@ -121,11 +126,16 @@ for the dashboard. Every command supports `--help`.
 
 | Command | Arguments and options |
 | --- | --- |
-| discover DOMAIN | `--sources wayback crtsh certspotter rapiddns completedns`; defaults to the first three |
-| | `--limit 5000`: maximum retained records per source |
-| | `--max-pages 20`: provider pagination ceiling |
-| | `--from-date YYYY`, `--to-date YYYY`: Wayback-only date filters, up to YYYYMMDDhhmmss |
+| discover DOMAIN | `--sources wayback crtsh certspotter rapiddns completedns commoncrawl`; defaults to Wayback, both CT sources and Common Crawl |
+| | `--limit 5000`: record-processing budget per source for this invocation |
+| | `--max-pages 20`: page/metadata steps per source for this invocation |
+| | `--page-size 1000`: Wayback request size (1–10000), fixed for the run |
+| | `--from-date YYYY`, `--to-date YYYY`: Wayback/Common Crawl date filters, up to YYYYMMDDhhmmss |
+| | `--cc-latest 1`: select latest N Common Crawl indexes (1–100); pinned when catalog is saved |
+| | `--cc-index CC-MAIN-YYYY-NN`: explicitly select an index; repeat for more (overrides `--cc-latest`) |
 | | `--strict`: exit 1 if any provider errors or coverage is truncated |
+| runs | Latest 50 saved run IDs, states, counts and errors; `--json` for machine-readable summaries |
+| resume RUN_ID | `--limit 5000`, `--max-pages 20`, `--strict`; budgets are additional, query cannot change |
 | check DOMAIN | `--dns-only`, `--concurrency 8`, `--timeout 5`, `--host-timeout 45` |
 | watch DOMAIN | Same check flags; `--rounds 5`, `--interval 60` seconds |
 | inventory DOMAIN | Display stored hosts and latest state |
@@ -144,11 +154,14 @@ is an overall per-host deadline greater than zero and at most 600 seconds.
 Timeouts and unexpected host errors become unknown samples; other hosts continue.
 A batch probes up to two public addresses per host, trying both IP families when possible.
 Date and page ceilings intentionally mean partial archive coverage on large domains.
-`--limit` counts retained evidence records, not unique hosts. Each provider response
+`--limit` counts processed evidence records, not unique hosts (duplicates can consume budget).
+Unprocessed records in a downloaded page are saved for the next resume; they are not discarded.
+Limits accept 1–1000000 records and 1–10000 page steps per invocation. Each provider response
 is separately limited to 16 MiB of decompressed JSON. Oversized replies produce an
 explicit source error; narrow the query or use a suitable alternative source.
-`--max-pages` applies to paginated Wayback, Cert Spotter and RapidDNS requests;
-it does not paginate crt.sh or CompleteDNS. `--timeout` applies to individual
+Common Crawl catalog/page-count steps also consume `--max-pages`; crt.sh/CompleteDNS
+are single-response sources with a durable local buffer, not remotely paginated APIs.
+`--timeout` applies to individual
 DNS/HTTP operations, not the entire job. There is no Atlas requests-per-second flag.
 Date strings accept 4, 6, 8, 10, 12 or 14 digits and are calendar-validated.
 
@@ -157,6 +170,9 @@ Examples:
 ```cmd
 wayback-atlas --output-dir "D:\Recon\Example" discover example.com --sources wayback --from-date 2005 --to-date 2015 --limit 20000 --max-pages 50
 wayback-atlas --output-dir "D:\Recon\Example" discover example.com --sources crtsh certspotter
+wayback-atlas --output-dir "D:\Recon\Example" discover example.com --sources commoncrawl --cc-latest 3 --limit 5000
+wayback-atlas --output-dir "D:\Recon\Example" runs
+wayback-atlas --output-dir "D:\Recon\Example" resume RUN_ID --limit 20000 --max-pages 50
 wayback-atlas --output-dir "D:\Recon\Example" import example.com hosts.csv
 wayback-atlas --output-dir "D:\Recon\Example" watch example.com --dns-only --rounds 10 --interval 60
 ```
@@ -164,6 +180,13 @@ wayback-atlas --output-dir "D:\Recon\Example" watch example.com --dns-only --rou
 Unrelated domains from provider data and imports are excluded structurally; a result
 for `notexample.com` is not treated as a child of `example.com`. Enter any desired
 root domain—there is no hard-coded target allowlist or authorization ticket workflow.
+
+Common Crawl uses its public CDX JSONL index, preserving the crawl collection ID on
+each record. It does not download WARC files, execute archived content, or actively
+crawl the target. The default covers the latest **one** published index, not the full
+archive. Select more indexes for broader history; date filters do not automatically
+select older indexes. See the [official index](https://index.commoncrawl.org/) and
+[resumable discovery guide](docs/RESUMABLE_DISCOVERY.md) for coverage and recovery limits.
 
 ## Your requested services
 
@@ -260,7 +283,7 @@ unwritable path gives an error rather than silently selecting a different databa
 
 Files include:
 
-- `inventory.sqlite3`: persistent hosts, evidence, provider runs and complete check history.
+- `inventory.sqlite3`: hosts, evidence, check history, discovery jobs and resumable page buffers.
 - `DOMAIN_TIMESTAMP.json`: source evidence, recent samples, errors, archive summary and trends.
 - `DOMAIN_TIMESTAMP.csv`: flat host inventory with spreadsheet formula protection.
 - `*_hosts.txt`, `*_alive.txt`, `*_down_observed.txt`, `*_intermittent.txt`.
@@ -271,9 +294,13 @@ JSON reports include the latest 100 checks per host and latest 100 provider runs
 the database retains the full history. Back up the database only after closing
 the application, or use SQLite's backup facility. Source query failures never
 delete previously discovered hosts. Interrupted checks retain completed samples.
+Discovery saves each fetched page before processing and commits evidence with its
+checkpoint. On an interruption, only an uncommitted/in-flight request may need repeating.
 
 Potentially sensitive query parameter values are redacted in archived URLs.
 Reports can still contain private research context: keep output folders out of Git.
+Opaque provider cursors can contain unredacted URL information; protect the database
+and backups even when exported evidence URLs are redacted. API keys are not checkpointed.
 Existing Dork Searcher results can be imported; nothing is automatically deleted.
 Importing an Atlas JSON report imports host records, not the complete database
 history. It is not a backup restore. See [import formats and backup procedure](docs/OPERATIONS.md).
@@ -295,7 +322,7 @@ Custom output directories are not automatically covered by this repository's
 6. Add scheduled report comparisons and notifications only after baselining expected
    maintenance, wildcard behavior and rate limits.
 
-This is a tested 3.1 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
+This is a tested 3.2 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
 The [code-based assessment](docs/ASSESSMENT_AND_ROADMAP.md) separates existing
 capabilities from proposed changes and provides an implementation order and test criteria.
 

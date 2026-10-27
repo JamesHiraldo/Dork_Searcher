@@ -163,7 +163,17 @@ def test_doctor_never_prints_api_key(monkeypatch, tmp_path):
 
 def test_strict_discovery_rejects_partial_coverage(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "console", Console(file=io.StringIO()))
-    monkeypatch.setattr(cli, "collect", lambda *a, **kw: DiscoveryResult("crtsh", truncated=True))
+    monkeypatch.setattr(
+        cli,
+        "run_discovery",
+        lambda *a, **kw: [
+            DiscoveryResult(
+                "crtsh",
+                truncated=True,
+                metadata={"processed": 1, "new_hosts": 1, "total_records": 1, "status": "paused"},
+            )
+        ],
+    )
     base = ["--output-dir", str(tmp_path), "discover", "example.com", "--sources", "crtsh"]
     assert cli.main(base) == 0
     assert cli.main([*base, "--strict"]) == 1

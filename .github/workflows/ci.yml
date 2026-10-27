@@ -67,6 +67,6 @@ jobs:
           name: windows-release
           path: |
             Wayback_Atlas_App/wayback_atlas.exe
-            Wayback_Atlas_App/wayback_atlas-3.1.0-py3-none-any.whl
+            Wayback_Atlas_App/wayback_atlas-3.2.0-py3-none-any.whl
             Wayback_Atlas_App/SHA256SUMS.txt
 

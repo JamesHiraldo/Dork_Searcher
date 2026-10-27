@@ -1,6 +1,6 @@
 # Wayback Atlas documentation
 
-Dork Searcher has become **Wayback Atlas 3.1**. The canonical guide is
+Dork Searcher has become **Wayback Atlas 3.2**. The canonical guide is
 [the root README](../README.md), including Windows CMD startup, every command/flag,
 the terminal menu, API setup, offline archive dorks, monitoring and export semantics.
 
@@ -19,6 +19,7 @@ The parameter-inventory module remains documented in [README_RECON.md](README_RE
 | Source, wheel or EXE installation | [Install](INSTALL.md) |
 | Windows paths, checksums and release behavior | [Windows EXE](WINDOWS_EXE_GUIDE.md) |
 | Imports, data model, backup, automation and errors | [Operations](OPERATIONS.md) |
+| Checkpoints, resume and Common Crawl selection | [Resumable discovery](RESUMABLE_DISCOVERY.md) |
 | Legacy parameter analysis and HTTP/CORS command | [Retained commands](README_RECON.md) |
 | Tests, packaging and release verification | [Development](DEVELOPMENT.md) |
 | Current limitations and prioritized add-ons | [Assessment and roadmap](ASSESSMENT_AND_ROADMAP.md) |
@@ -27,5 +28,5 @@ The parameter-inventory module remains documented in [README_RECON.md](README_RE
 | Vulnerability reporting and repository policy | [Security policy](../SECURITY.md) |
 
 The roadmap contains proposals, not additional working commands. Documentation
-describes Atlas 3.1.0; the project is beta. Providers can change independently of
+describes Atlas 3.2.0; the project is beta. Providers can change independently of
 the application. A successful local test does not guarantee provider availability.

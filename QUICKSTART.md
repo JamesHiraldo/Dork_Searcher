@@ -15,6 +15,8 @@ Type the number and press Enter. Choose **0** to exit; submenus use **0** to go
 back. Start with the left-hand Discover & Check group, then use Your Workspace
 for imports, local dorks and exports. In narrow windows the groups stack vertically.
 Menu **11** provides local diagnostics and a full database backup.
+Menu **12** resumes interrupted or budget-limited discoveries. Common Crawl is included
+in menu 1; select it alone from menu 3. It searches archive indexes, not live site content.
 
 Direct executable commands:
 
@@ -37,7 +39,17 @@ wayback_atlas.bat --output-dir "D:\Recon\Example" backup "D:\Recon\Example-backu
 ```
 
 Use a new backup filename each time; existing files are never overwritten.
-Run `wayback_atlas.bat --version` to confirm you are using 3.1.0.
+Run `wayback_atlas.bat --version` to confirm you are using 3.2.0.
+
+Continue a saved run (replace `RUN_ID` with the full ID shown by `runs`):
+
+```cmd
+wayback_atlas.bat --output-dir "D:\Recon\Example" runs
+wayback_atlas.bat --output-dir "D:\Recon\Example" resume RUN_ID --limit 10000 --max-pages 50
+```
+
+`discover` always starts a fresh query; `resume` continues an existing query. See
+[resumable discovery](docs/RESUMABLE_DISCOVERY.md) for Common Crawl index selection and recovery.
 
 Place `--output-dir` before the subcommand. Inspect the discovered list before
 selecting HTTP checks. `watch` checks the stored list from startup; repeat

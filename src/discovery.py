@@ -13,10 +13,12 @@ from urllib.parse import quote, urlsplit
 
 import requests
 
-from .http_transport import read_json, retry_delay
+from .http_transport import read_json, read_json_lines, retry_delay
 from .recon_pipeline import redact_sensitive_url
 from .scope import ScopeError, host_in_scope, normalize_hostname, parse_http_url
 from .wayback import WaybackClient
+
+NOT_FOUND = object()
 
 
 @dataclass
@@ -33,7 +35,13 @@ class DiscoveryResult:
 
 
 def request_json(
-    session: requests.Session, url: str, *, secrets: tuple[str, ...] = (), **kwargs: Any
+    session: requests.Session,
+    url: str,
+    *,
+    secrets: tuple[str, ...] = (),
+    json_lines: bool = False,
+    empty_on_404: bool = False,
+    **kwargs: Any,
 ) -> Any:
     """Bound transient retries and never expose credential-bearing request URLs."""
     for attempt in range(3):
@@ -47,9 +55,11 @@ def request_json(
                 response.close()
                 time.sleep(delay)
                 continue
+            if response.status_code == 404 and empty_on_404:
+                return NOT_FOUND
             if not 200 <= response.status_code < 300:
                 raise ValueError(f"Provider returned HTTP {response.status_code}")
-            payload = read_json(response)
+            payload = read_json_lines(response) if json_lines else read_json(response)
         except requests.RequestException as exc:
             if attempt < 2:
                 time.sleep(0.5 * 2**attempt)

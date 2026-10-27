@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import math
-import os
 import sqlite3
 import sys
 import time
@@ -24,15 +24,17 @@ from rich.text import Text
 from . import __version__
 from .artifacts import atomic_write_text, save_json
 from .availability import sample_hosts
+from .checkpoints import Checkpoints, run_discovery
 from .diagnostics import diagnose
-from .discovery import collect, import_records
+from .discovery import import_records
+from .discovery_pages import SOURCES
 from .inventory import Inventory
 from .scope import normalize_hostname
 from .workbench import RESOURCES, TEMPLATES, duckduckgo_link, filter_archive
 from .workspace import result_directory
 
 console = Console(highlight=False, markup=False)
-SOURCES = ("wayback", "crtsh", "certspotter", "rapiddns", "completedns")
+DEFAULT_SOURCES = ["wayback", "crtsh", "certspotter", "commoncrawl"]
 NOTICE = "Use only on assets you own or have permission to assess."
 SPIDER = r"""        |
     \   |   /
@@ -54,6 +56,7 @@ MENU_LABELS = {
     "9": "Research resources",
     "10": "Export reports",
     "11": "Diagnostics & backup",
+    "12": "Saved discovery / resume",
     "0": "Exit",
 }
 
@@ -108,7 +111,7 @@ def dashboard(directory: Path) -> None:
     console.print(Panel(header, border_style="cyan", padding=(0, 1)))
     console.print(Text("START HERE   1 Discover  ->  4 Check  ->  5 Watch", style="dim"))
     left = menu_panel("DISCOVER & CHECK", {str(n): MENU_LABELS[str(n)] for n in range(1, 6)})
-    right = menu_panel("YOUR WORKSPACE", {str(n): MENU_LABELS[str(n)] for n in range(6, 12)})
+    right = menu_panel("YOUR WORKSPACE", {str(n): MENU_LABELS[str(n)] for n in range(6, 13)})
     if console.width >= 76:
         columns = Table.grid(padding=(0, 1), expand=True)
         columns.add_column(ratio=1)
@@ -151,22 +154,36 @@ def show_inventory(store: Inventory, target: str) -> None:
 def discover(
     store: Inventory, target: str, sources: list[str], *, strict: bool = False, **options: Any
 ) -> list[str]:
+    limit = options.pop("limit", 5000)
+    max_pages = options.pop("max_pages", 20)
+    checkpoints = Checkpoints(store)
+    job_id = checkpoints.create(target, sources, **options)
+    return continue_discovery(checkpoints, job_id, limit=limit, max_pages=max_pages, strict=strict)
+
+
+def continue_discovery(
+    checkpoints: Checkpoints,
+    job_id: str,
+    *,
+    limit: int = 5000,
+    max_pages: int = 20,
+    strict: bool = False,
+) -> list[str]:
+    console.print(f"Discovery run: {job_id}")
+    console.print("Progress is saved automatically. Use 'resume RUN_ID' in this output folder.")
+    with console.status("Loading discovery checkpoint...", spinner="line") as progress:
+        results = run_discovery(
+            checkpoints, job_id, limit=limit, max_pages=max_pages, on_progress=progress.update
+        )
     statuses = []
-    for source in sources:
-        key_name = {
-            "rapiddns": "RAPIDDNS_API_KEY",
-            "completedns": "COMPLETEDNS_API_KEY",
-            "certspotter": "CERTSPOTTER_API_KEY",
-        }.get(source)
-        key = os.getenv(key_name, "") if key_name else ""
-        with console.status(f"Collecting {source} for {target}...", spinner="line"):
-            result = collect(target, source, api_key=key, **options)
-            new = store.merge(target, result)
+    for result in results:
+        meta = result.metadata
         message = (
-            f"{source}: {len(result.records)} records / {len(new)} new hosts / {result.status}"
+            f"{result.source}: {meta['processed']} records this invocation / "
+            f"{meta['new_hosts']} new hosts / {meta['status']} / {meta['total_records']} total"
         )
         if result.truncated:
-            message += " / limit reached (partial coverage)"
+            message += " / resumable (partial coverage)"
         console.print(Text(message, style="cyan"))
         if result.error:
             console.print(Text(result.error, style="yellow"))
@@ -174,6 +191,24 @@ def discover(
             "incomplete" if strict and (result.error or result.truncated) else result.status
         )
     return statuses
+
+
+def show_runs(checkpoints: Checkpoints) -> list[dict[str, Any]]:
+    runs = checkpoints.runs()
+    for run in runs:
+        console.print(f"{run['id']}  {run['target']}  {run['created_at'][:19]}")
+        if run["crawl_indexes"]:
+            console.print("  Crawl indexes: " + ", ".join(run["crawl_indexes"]))
+        for source, state in run["sources"].items():
+            console.print(
+                f"  {source}: {state['status']} / {state['records']} records / "
+                f"{state['pages']} pages"
+            )
+            if state["error"]:
+                console.print(Text(f"  {state['error']}", style="yellow"))
+    if not runs:
+        console.print("No saved discovery runs. Start with option 1 or the discover command.")
+    return runs
 
 
 def monitor(
@@ -315,6 +350,29 @@ def main_menu(directory: Path) -> None:
                 if choice == "9":
                     resource_menu()
                     continue
+                if choice == "12":
+                    checkpoints = Checkpoints(store)
+                    runs = show_runs(checkpoints)
+                    if not runs:
+                        continue
+                    selected = numbered_menu(
+                        "RESUME A SAVED RUN",
+                        {
+                            **{
+                                str(i): f"{r['target']} / {r['id'][:8]}"
+                                for i, r in enumerate(runs, 1)
+                            },
+                            "0": "Back to main menu",
+                        },
+                        default="0",
+                    )
+                    if selected == "0":
+                        continue
+                    run = runs[int(selected) - 1]
+                    limit = ask_int("Additional records per source", 5000, 1, 100000)
+                    continue_discovery(checkpoints, run["id"], limit=limit)
+                    console.print(f"Report: {store.export(run['target'], directory)}")
+                    continue
                 if choice == "11":
                     action = numbered_menu(
                         "SYSTEM TOOLS",
@@ -344,7 +402,7 @@ def main_menu(directory: Path) -> None:
                     continue
                 target = ask_target(store)
                 if choice in ("1", "2", "3"):
-                    sources = ["wayback", "crtsh", "certspotter"] if choice == "1" else ["wayback"]
+                    sources = DEFAULT_SOURCES if choice == "1" else ["wayback"]
                     if choice == "3":
                         selection = numbered_menu(
                             "CHOOSE A SOURCE",
@@ -353,6 +411,7 @@ def main_menu(directory: Path) -> None:
                                 "2": "Cert Spotter - certificate names",
                                 "3": "RapidDNS - API key required",
                                 "4": "CompleteDNS - nameserver history (API key)",
+                                "5": "Common Crawl - archived URLs and hostnames",
                                 "0": "Back to main menu",
                             },
                             default="1",
@@ -361,7 +420,9 @@ def main_menu(directory: Path) -> None:
                             continue
                         source = SOURCES[int(selection)]
                         sources = [source]
-                    limit = ask_int("Maximum records per source", 5000, 1, 100000)
+                    limit = ask_int(
+                        "Records per source this run (remaining results resumable)", 5000, 1, 100000
+                    )
                     start = end = None
                     if choice == "2":
                         start = Prompt.ask("From year/date (blank = all)", default="") or None
@@ -425,9 +486,31 @@ def build_parser() -> argparse.ArgumentParser:
         p = sub.add_parser(name)
         p.add_argument("target", help="Root domain; all its discovered child hosts are included")
         if name == "discover":
-            p.add_argument("--sources", nargs="+", choices=SOURCES, default=list(SOURCES[:3]))
-            p.add_argument("--limit", type=int, default=5000)
-            p.add_argument("--max-pages", type=int, default=20)
+            p.add_argument("--sources", nargs="+", choices=SOURCES, default=DEFAULT_SOURCES)
+            p.add_argument(
+                "--limit", type=int, default=5000, help="Records per source this invocation"
+            )
+            p.add_argument(
+                "--max-pages",
+                type=int,
+                default=20,
+                help="Page/metadata steps per source this invocation",
+            )
+            p.add_argument(
+                "--page-size", type=int, default=1000, help="Wayback request size (fixed for a run)"
+            )
+            p.add_argument(
+                "--cc-index",
+                action="append",
+                dest="cc_indexes",
+                help="Common Crawl ID; repeat for multiple indexes",
+            )
+            p.add_argument(
+                "--cc-latest",
+                type=int,
+                default=1,
+                help="Latest N indexes if --cc-index is omitted (1-100)",
+            )
             p.add_argument("--from-date")
             p.add_argument("--to-date")
             p.add_argument(
@@ -454,6 +537,19 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="Local runtime, TLS, DNS and database checks; no network")
     backup = sub.add_parser("backup", help="Consistent full inventory backup; never overwrite")
     backup.add_argument("destination", help="New SQLite backup file path")
+    runs = sub.add_parser("runs", help="List the latest 50 saved discovery runs")
+    runs.add_argument("--json", action="store_true", help="Machine-readable run summaries")
+    resume = sub.add_parser(
+        "resume", help="Continue a saved discovery run without changing its query"
+    )
+    resume.add_argument("run_id")
+    resume.add_argument(
+        "--limit", type=int, default=5000, help="Additional record budget per source"
+    )
+    resume.add_argument(
+        "--max-pages", type=int, default=20, help="Additional page/metadata steps per source"
+    )
+    resume.add_argument("--strict", action="store_true")
     return parser
 
 
@@ -488,6 +584,27 @@ def main(argv: list[str] | None = None) -> int:
             for name, url, detail in RESOURCES:
                 console.print(f"{name}: {url}\n  {detail}")
             return 0
+        if args.command in ("runs", "resume"):
+            with Inventory(directory / "inventory.sqlite3") as store:
+                checkpoints = Checkpoints(store)
+                if args.command == "runs":
+                    if args.json:
+                        console.print(json.dumps(checkpoints.runs(), indent=2), soft_wrap=True)
+                    else:
+                        show_runs(checkpoints)
+                    return 0
+                console.print(NOTICE)
+                statuses = continue_discovery(
+                    checkpoints,
+                    args.run_id,
+                    limit=args.limit,
+                    max_pages=args.max_pages,
+                    strict=args.strict,
+                )
+                console.print(
+                    f"Report: {store.export(checkpoints.job(args.run_id)['target'], directory)}"
+                )
+                return int("incomplete" in statuses or all(s == "error" for s in statuses))
         target = normalize_hostname(args.target)
         console.print(NOTICE)
         statuses = []
@@ -502,6 +619,9 @@ def main(argv: list[str] | None = None) -> int:
                     strict=args.strict,
                     from_date=args.from_date,
                     to_date=args.to_date,
+                    cc_indexes=args.cc_indexes,
+                    cc_latest=args.cc_latest,
+                    page_size=args.page_size,
                 )
             elif args.command in ("check", "watch"):
                 monitor(

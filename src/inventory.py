@@ -114,39 +114,43 @@ class Inventory:
         self.db.close()
 
     def merge(self, target: str, result: DiscoveryResult) -> list[str]:
+        with self.db:
+            return self.merge_in_transaction(target, result)
+
+    def merge_in_transaction(self, target: str, result: DiscoveryResult) -> list[str]:
+        """Caller owns the transaction (also used by atomic discovery checkpoints)."""
         now = utc_now()
         new = []
-        with self.db:
-            for item in result.records:
-                host = item["hostname"]
-                inserted = self.db.execute(
-                    "INSERT OR IGNORE INTO assets VALUES (?,?,?,?)", (target, host, now, now)
-                ).rowcount
-                if inserted:
-                    new.append(host)
-                else:
-                    self.db.execute(
-                        "UPDATE assets SET last_seen=? WHERE target=? AND hostname=?",
-                        (now, target, host),
-                    )
-                payload = json.dumps(item, sort_keys=True)
-                digest = hashlib.sha256(payload.encode()).hexdigest()
+        for item in result.records:
+            host = item["hostname"]
+            inserted = self.db.execute(
+                "INSERT OR IGNORE INTO assets VALUES (?,?,?,?)", (target, host, now, now)
+            ).rowcount
+            if inserted:
+                new.append(host)
+            else:
                 self.db.execute(
-                    "INSERT OR IGNORE INTO evidence VALUES (?,?,?,?,?)",
-                    (target, host, result.source, digest, payload),
+                    "UPDATE assets SET last_seen=? WHERE target=? AND hostname=?",
+                    (now, target, host),
                 )
-            summary = {
-                "count": len(result.records),
-                "new_hosts": new,
-                "error": result.error,
-                "truncated": result.truncated,
-                "metadata": result.metadata,
-            }
+            payload = json.dumps(item, sort_keys=True)
+            digest = hashlib.sha256(payload.encode()).hexdigest()
             self.db.execute(
-                "INSERT INTO provider_runs(target,source,observed_at,status,payload) "
-                "VALUES (?,?,?,?,?)",
-                (target, result.source, now, result.status, json.dumps(summary)),
+                "INSERT OR IGNORE INTO evidence VALUES (?,?,?,?,?)",
+                (target, host, result.source, digest, payload),
             )
+        summary = {
+            "count": len(result.records),
+            "new_hosts": new,
+            "error": result.error,
+            "truncated": result.truncated,
+            "metadata": result.metadata,
+        }
+        self.db.execute(
+            "INSERT INTO provider_runs(target,source,observed_at,status,payload) "
+            "VALUES (?,?,?,?,?)",
+            (target, result.source, now, result.status, json.dumps(summary)),
+        )
         return new
 
     def targets(self) -> list[str]:
@@ -222,7 +226,7 @@ class Inventory:
                 {
                     str(e.get("observed_at"))
                     for e in asset["evidence"]
-                    if e["source"] == "wayback" and e.get("observed_at")
+                    if e["source"] in ("wayback", "commoncrawl") and e.get("observed_at")
                 }
             )
             asset["first_archived_sample"] = archive_dates[0] if archive_dates else None

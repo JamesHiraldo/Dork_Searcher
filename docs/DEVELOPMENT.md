@@ -19,6 +19,11 @@ potentially locked pytest folders. MyPy/Ruff caches and Python bytecode may reap
 No live target requests are required by this test suite. Tests are not a complete
 security audit or a substitute for release/runtime checks.
 
+Checkpoint tests inject interruption before/after staging and during evidence commits,
+reopen databases, simulate two SQLite writers and exercise cursor cycles across runs.
+Common Crawl fixtures cover catalog pinning, index page counts, JSONL errors and bounds.
+The checkpoint format and limitations are documented in [resumable discovery](RESUMABLE_DISCOVERY.md).
+
 For source debugging use `python -m src.cli`. The `.bat` launcher prefers the EXE
 and therefore will not reflect unbuilt source edits. A wheel installation is also
 separate from the source checkout unless installed in editable mode.
@@ -45,6 +50,17 @@ DNS/HTTP checks of example.com. It is not offline and does not test paid provide
 Inspect the printed JSON `status`, `error`, counts and HTTP/DNS state: the script
 prints provider failures but does not currently fail its process merely because a
 provider returned an error. It is diagnostic output, not a strict release gate.
+
+For a bounded live Common Crawl check with saved progress, use a disposable directory:
+
+```powershell
+.\.venv-atlas\Scripts\python.exe -m src.cli --output-dir .pytest-atlas-cc discover example.com --sources commoncrawl --limit 2 --max-pages 3
+.\.venv-atlas\Scripts\python.exe -m src.cli --output-dir .pytest-atlas-cc runs
+```
+
+This performs catalog, page-count and one data-page step. Do not use `--strict` as
+a completion gate for this intentionally budget-limited smoke. Check `paused` versus
+`error`, saved evidence and the pinned index. Resume using the printed full run ID.
 
 ## Build Windows artifacts
 
@@ -77,7 +93,8 @@ byte-for-byte reproducible. There is currently no release-signing step.
 CI now includes a Windows EXE build and offline smoke job after source tests.
 Run it locally with `python scripts/release_smoke.py` after building. It exercises
 version/help, local TLS/DNS diagnostics, import, inventory, dorks, full backup,
-export, the menu and EOF without target requests. It creates and cleans a temporary
+export, staged-page checkpoint resume, Common Crawl/resume flags, the menu and EOF
+without target requests. It creates and cleans a temporary
 synthetic workspace. CI configuration is not evidence of a successful remote run.
 Documentation-only changes
 do not require rebuilding executable code. The wheel's embedded README metadata

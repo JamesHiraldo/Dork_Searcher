@@ -77,7 +77,7 @@ def test_ascii_banner_and_legacy_cmd_rendering(monkeypatch):
 def test_choice_retries_blank_and_invalid_without_long_choice_list(monkeypatch):
     stream = io.StringIO()
     monkeypatch.setattr(cli, "console", Console(file=stream, width=80))
-    answers = iter(["", "bad", "12", " 10 "])
+    answers = iter(["", "bad", "13", " 10 "])
     monkeypatch.setattr("builtins.input", lambda *args: next(answers))
     assert cli.ask_choice(cli.MENU_LABELS, "Enter a number (0 to exit)") == "10"
     output = stream.getvalue()
@@ -95,7 +95,13 @@ def test_numbered_menu_default_is_explained(monkeypatch):
 
 @pytest.mark.parametrize(
     "selection,source",
-    [("1", "crtsh"), ("2", "certspotter"), ("3", "rapiddns"), ("4", "completedns")],
+    [
+        ("1", "crtsh"),
+        ("2", "certspotter"),
+        ("3", "rapiddns"),
+        ("4", "completedns"),
+        ("5", "commoncrawl"),
+    ],
 )
 def test_source_menu_routes_numbers_without_network(monkeypatch, tmp_path, selection, source):
     monkeypatch.setattr(cli, "console", Console(file=io.StringIO(), width=80))

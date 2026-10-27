@@ -1,6 +1,6 @@
 # Operations, data and troubleshooting
 
-Applies to Wayback Atlas 3.1.0. Commands below run in CMD from the repository
+Applies to Wayback Atlas 3.2.0. Commands below run in CMD from the repository
 root. In PowerShell prefix the launcher with `.\`. Use only authorized targets.
 
 ## Keep a consistent workspace
@@ -22,6 +22,21 @@ different inventory; it does not move or merge the previous database.
 
 Relative paths passed through the Windows batch launcher resolve from the project
 folder because the launcher changes directory there. Prefer absolute paths in jobs.
+
+## Resume discovery and select crawl indexes
+
+Discovery creates a run ID and saves each page before processing. `runs` lists the
+latest 50 IDs; `resume RUN_ID` continues a saved query. Menu 12 provides the same
+workflow. Use the same output folder; budgets are additional per source for this
+invocation, and completed sources are skipped. A fresh `discover` starts a new query
+without deleting inventory data. API keys are read again from the environment.
+
+Default sources now include Common Crawl's latest one published index. Use
+`--sources commoncrawl --cc-latest 3` or repeated `--cc-index CC-MAIN-YYYY-NN`
+options for more collections. Selection is pinned in the checkpoint; date filters
+do not automatically select older collections. No live page crawling is performed.
+See [resumable discovery](RESUMABLE_DISCOVERY.md) for exact budgets, query stability,
+crash recovery, concurrency, schema versioning and Common Crawl behavior.
 
 ## What gets checked
 
@@ -97,12 +112,13 @@ Import is not a database-backup restore.
 ## Reading reports
 
 `inventory.sqlite3` stores assets, source evidence, provider runs and all completed
-availability samples. Exports have `schema_version: 1`. Inspect these sections:
+availability samples, plus discovery jobs/cursors and pending page buffers.
+Exports have `schema_version: 1`. Inspect these sections:
 
 - `assets`: local first/last seen, sources, evidence, latest sample and trends.
 - `samples`: latest 100 stored checks per host; full history remains in SQLite.
 - `archive_summary`: distinct stored URLs, endpoints and parameter names.
-- `provider_runs`: latest 100 runs, including source errors, new-host lists and truncation.
+- `provider_runs`: latest 100 audit entries, including source errors and page/batch commits.
 - `provider_runs[].payload.metadata`: CompleteDNS events and other provider context.
 
 Atlas timestamps are UTC; provider timestamps keep their provider-specific format.
@@ -112,7 +128,9 @@ counts; those counts alone do not prove Wayback provenance. Check each evidence 
 
 Wayback uses `collapse=urlkey`: a representative capture is kept per URL key within
 the query. `first_archived_sample`/`last_archived_sample` are extrema of retained
-samples, not complete first/last captures. Date-range jobs improve coverage but do
+Wayback/Common Crawl samples, not complete first/last captures. Common Crawl evidence
+includes `crawl_index`; `runs --json` includes pinned index IDs and query options.
+Date-range jobs improve coverage but do
 not turn this into an exhaustive lifetime history.
 
 `online` and `tls_error` go into the alive list; the latter does not prove a
@@ -123,7 +141,7 @@ including DNS negatives; DNS-only runs do not contribute. It is not time-weighte
 Two observed HTTP or DNS transitions flag an intermittent candidate. Inspect sample
 times and possible local network failures before interpreting that flag.
 
-`discover`, `import`, `check`, `watch` and `export` write timestamped reports.
+`discover`, `resume`, `import`, `check`, `watch` and `export` write timestamped reports.
 `inventory` displays a maximum of 200 rows. `dorks` replaces `archive_matches.json`.
 Ctrl+C retains completed samples but can interrupt the final report export; run
 `export` afterwards. Source failure never automatically deletes prior discoveries.
@@ -146,6 +164,7 @@ wayback_atlas.bat --output-dir "D:\Recon\Example" backup "D:\Recon\Example-backu
 This uses SQLite's backup API, checks integrity and refuses to overwrite an existing
 path. It has a 30-second progress deadline; retry during a quiet period if busy.
 Custom dork templates and exported reports are not part of this database-only copy.
+Discovery checkpoints and pending buffers are included, so the restored copy can resume.
 To restore, stop the application and place a copy of the backup in a new empty
 output directory named `inventory.sqlite3`, then run `inventory` with that directory.
 There is no automatic restore, prune or schema-migration command. Never use a raw
@@ -154,6 +173,8 @@ Keep databases on local storage; back up closed files to sync/network storage.
 
 Query-name-based redaction is a heuristic, not a secret detector. Names, paths,
 unrecognized parameter values and imported/provider metadata may remain sensitive.
+Opaque pagination cursors may also contain unredacted URL information; keep SQLite
+files/backups private even when exported URLs have redacted parameters.
 Review reports before sharing. Default Git ignore rules do not cover every custom
 output path. Run `git status --short` before committing. Do not publish API keys.
 
@@ -162,14 +183,15 @@ output path. Run `git status --short` before committing. Do not publish API keys
 | Code | Atlas meaning |
 | --- | --- |
 | 0 | Command completed; can include empty results, failed hosts or partial provider coverage |
-| 1 | All discovery sources failed; or any failed/truncated with `discover --strict`; or `doctor` found a local error |
+| 1 | All selected discovery sources failed; or any incomplete/failed with discover/resume `--strict`; or `doctor` found a local error |
 | 2 | CLI parsing, input, output-path or handled database/OS error |
 | 130 | User interrupted the CLI |
 
 Inspect `provider_runs`, truncation and per-host states rather than treating exit
 0 as complete discovery or universal availability. `discover --strict` fails on
 any source error or truncation, but cannot establish index completeness. An import
-with zero retained rows can still return 0. No machine-readable stdout flag exists.
+with zero retained rows can still return 0. `runs --json` offers machine-readable
+checkpoint summaries; other data commands use saved JSON reports.
 Use absolute output paths, prevent overlapping jobs, and preserve logs if you
 configure an external scheduler yourself. Atlas installs no scheduled tasks.
 
@@ -184,7 +206,10 @@ configure an external scheduler yourself. Atlas installs no scheduled tasks.
 | Provider HTTP 403/429 or challenge page | Review provider account/quota and wait. Use another documented source or import; do not loop rapidly. |
 | Missing RapidDNS/CompleteDNS key | Set the corresponding environment variable in the same shell; select that source explicitly. |
 | Cert Spotter misses older names | Its endpoint covers unexpired issuances even with `CERTSPOTTER_API_KEY`; combine sources. |
-| Discovery says limit reached | Coverage is partial; try a suitable budget or year-sliced Wayback jobs. Existing runs cannot resume across restarts. |
+| Discovery says paused / resumable | Use menu 12 or `runs` then `resume RUN_ID` in the same output directory. |
+| Cursor expired / repeated | Progress is intact; retry later or intentionally start a fresh `discover`. No silent reset occurs. |
+| Run changed in another process | Stop duplicate workers, then resume once. Stale revisions cannot overwrite progress. |
+| Common Crawl gives no older captures | Select historical crawl IDs; date filters alone do not select old indexes. |
 | Many hosts switch down together | Check local connectivity/resolver and compare another permitted vantage point. This is not proof of target outages. |
 | Database locked | Stop duplicate writers and wait for normal shutdown. Do not delete SQLite sidecars. |
 | SSL or corporate proxy trouble | Check system time/trust policy and distinguish provider access from direct HTTP probes. Do not disable TLS verification. |

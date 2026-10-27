@@ -2,6 +2,8 @@
 
 - `src/cli.py`: Rich dashboard and CLI subcommands
 - `src/discovery.py`: Wayback, CT, RapidDNS, CompleteDNS, and import adapters
+- `src/discovery_pages.py`: bounded one-page adapters including Common Crawl CDX JSONL
+- `src/checkpoints.py`: versioned runs, durable buffers/cursors and atomic evidence commits
 - `src/wayback.py`: bounded CDX pagination and capture metadata
 - `src/inventory.py`: SQLite evidence/history, trends and exports
 - `src/availability.py`: bounded asynchronous DNS and HTTP sampling
