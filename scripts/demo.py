@@ -65,7 +65,7 @@ def main() -> None:
         show_inventory(store, "example.com")
         store.export("example.com", directory)
     display.save_svg(
-        str(directory / "terminal-preview.svg"), title="Wayback Atlas / synthetic demo"
+        str(directory / "terminal-preview.svg"), title="Wayback-Recon / synthetic demo"
     )
 
 

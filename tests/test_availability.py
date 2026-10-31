@@ -43,10 +43,13 @@ async def test_dns_only_missing_host_does_not_count_as_http_check(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_http_any_status_is_alive_and_uses_pinned_ip(monkeypatch):
+async def test_http_403_is_reachable_not_webpage_and_uses_pinned_ip(monkeypatch):
     class Response:
         status_code = 403
         headers = {"location": "https://unrelated.example/"}
+
+        async def aiter_raw(self, **kwargs):
+            yield b"Forbidden"
 
         async def __aenter__(self):
             return self
@@ -73,6 +76,8 @@ async def test_http_any_status_is_alive_and_uses_pinned_ip(monkeypatch):
     monkeypatch.setattr(availability.httpx, "AsyncClient", Client)
     row = await availability.probe_address("api.example.com", "93.184.216.34", 2)
     assert row["state"] == "online"
+    assert row["classification"] == "forbidden"
+    assert row["network_reachable"] and not row["webpage_accessible"]
     assert calls[0][1] == "https://93.184.216.34/"
     assert calls[0][2]["headers"]["Host"] == "api.example.com"
     assert calls[0][2]["extensions"]["sni_hostname"] == "api.example.com"

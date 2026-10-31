@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
 from .artifacts import atomic_write_text, save_csv, save_json
+from .classification import EXPORT_STATES, classify_sample
 from .discovery import DiscoveryResult
 from .html_report import render_html
 from .scope import normalize_hostname
@@ -165,11 +166,18 @@ class Inventory:
             )
         ]
 
-    def hosts(self, target: str) -> list[str]:
+    def hosts(self, target: str, *, only_unchecked: bool = False) -> list[str]:
+        condition = (
+            " AND NOT EXISTS (SELECT 1 FROM checks c "
+            "WHERE c.target=assets.target AND c.hostname=assets.hostname)"
+            if only_unchecked
+            else ""
+        )
         return [
             row[0]
             for row in self.db.execute(
-                "SELECT hostname FROM assets WHERE target=? ORDER BY hostname", (target,)
+                "SELECT hostname FROM assets WHERE target=?" + condition + " ORDER BY hostname",
+                (target,),
             )
         ]
 
@@ -237,7 +245,7 @@ class Inventory:
             asset["last_archived_sample"] = archive_dates[-1] if archive_dates else None
             asset["archived_url_count"] = len({e["url"] for e in asset["evidence"] if e.get("url")})
             samples = [
-                json.loads(s[0])
+                classify_sample(json.loads(s[0]))
                 for s in reversed(
                     list(
                         self.db.execute(
@@ -249,7 +257,7 @@ class Inventory:
                 )
             ]
             asset["samples"] = samples
-            asset["latest"] = samples[-1] if samples else {"state": "unchecked"}
+            asset["latest"] = samples[-1] if samples else classify_sample({"state": "unchecked"})
             asset.update(availability_trend(samples))
             assets.append(asset)
         runs = [
@@ -266,8 +274,25 @@ class Inventory:
                 for key, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True)
             }
         )
+        response_groups: dict[tuple[Any, ...], list[str]] = {}
+        for asset in assets:
+            for attempt in asset["latest"].get("http", []):
+                fingerprint = attempt.get("body_fingerprint")
+                if fingerprint:
+                    key = (attempt.get("final_status", attempt.get("status")), fingerprint)
+                    response_groups.setdefault(key, []).append(asset["hostname"])
         return {
-            "schema_version": 1,
+            "schema_version": 2,
+            "response_groups": [
+                {
+                    "status": key[0],
+                    "fingerprint": key[1],
+                    "hosts": sorted(set(hosts)),
+                    "host_count": len(set(hosts)),
+                }
+                for key, hosts in response_groups.items()
+                if len(set(hosts)) > 1
+            ],
             "target": target,
             "generated_at": utc_now(),
             "history_window": "last 100 checks per host; complete history remains in SQLite",
@@ -276,6 +301,9 @@ class Inventory:
                 "Archive dates are sampled captures, not exhaustive lifetime bounds.",
                 "Intermittent is a candidate based on observed transitions, not proven randomness.",
                 "No response is not proof a host is permanently dead.",
+                "Alive means heuristically validated HTML, not guaranteed browser usability.",
+                "Legacy online state describes transport only; "
+                "use classification and webpage_accessible.",
             ],
             "assets": assets,
             "archive_summary": {
@@ -288,9 +316,27 @@ class Inventory:
             "provider_runs": runs,
         }
 
-    def export(self, target: str, directory: Path) -> Path:
+    def export(
+        self, target: str, directory: Path, *, filters: dict[str, Any] | None = None
+    ) -> Path:
         target = normalize_hostname(target)
         report = self.report(target)
+        if filters:
+            report["assets"] = filter_assets(report["assets"], filters)
+            selected_hosts = {a["hostname"] for a in report["assets"]}
+            report["response_groups"] = [
+                {
+                    **group,
+                    "hosts": [h for h in group["hosts"] if h in selected_hosts],
+                    "host_count": sum(h in selected_hosts for h in group["hosts"]),
+                }
+                for group in report["response_groups"]
+                if sum(h in selected_hosts for h in group["hosts"]) > 1
+            ]
+            report["filters"] = filters
+            report["notes"].append(
+                "Host inventory is filtered; archive/provider summaries retain target-wide context."
+            )
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         root = directory.expanduser().resolve()
         # Leave room for snapshot names and atomic-write temporary filenames on Windows.
@@ -327,6 +373,15 @@ class Inventory:
             "last_archived_sample",
             "archived_url_count",
             "state",
+            "classification",
+            "network_reachable",
+            "webpage_accessible",
+            "confidence",
+            "title",
+            "final_url",
+            "final_status",
+            "cnames",
+            "http_wildcard_possible",
             "dns_state",
             "addresses",
             "transitions",
@@ -343,6 +398,20 @@ class Inventory:
                     **asset,
                     "sources": ";".join(asset["sources"]),
                     "state": asset["latest"]["state"],
+                    **{
+                        key: asset["latest"].get(key)
+                        for key in (
+                            "classification",
+                            "network_reachable",
+                            "webpage_accessible",
+                            "confidence",
+                            "title",
+                            "final_url",
+                            "final_status",
+                            "http_wildcard_possible",
+                        )
+                    },
+                    "cnames": ";".join(asset["latest"].get("cnames", [])),
                     "dns_state": asset["latest"].get("dns_state", "unchecked"),
                     "addresses": ";".join(asset["latest"].get("addresses", [])),
                 }
@@ -350,11 +419,7 @@ class Inventory:
         save_csv(str(destination / "inventory.csv"), fields, rows)
         for label, hosts in {
             "hosts": [a["hostname"] for a in report["assets"]],
-            "alive": [
-                a["hostname"]
-                for a in report["assets"]
-                if a["latest"]["state"] in ("online", "tls_error")
-            ],
+            "alive": [a["hostname"] for a in report["assets"] if a["latest"]["webpage_accessible"]],
             "intermittent": [
                 a["hostname"] for a in report["assets"] if a["intermittent_candidate"]
             ],
@@ -367,8 +432,38 @@ class Inventory:
             atomic_write_text(
                 str(destination / f"{label}.txt"), "\n".join(hosts) + ("\n" if hosts else "")
             )
+        for label, states in EXPORT_STATES.items():
+            hosts = [
+                a["hostname"] for a in report["assets"] if a["latest"]["classification"] in states
+            ]
+            atomic_write_text(
+                str(destination / f"{label}.txt"), "\n".join(hosts) + ("\n" if hosts else "")
+            )
         atomic_write_text(str(destination / "report.html"), render_html(report))
         # Write the main report last: its presence marks a completed snapshot bundle.
         path = destination / "report.json"
         save_json(str(path), report)
         return path
+
+
+def filter_assets(assets: list[dict[str, Any]], filters: dict[str, Any]) -> list[dict[str, Any]]:
+    selected = []
+    for asset in assets:
+        latest = asset["latest"]
+        if filters.get("only_webpages"):
+            allowed = {"confirmed_webpage"}
+            if filters.get("include_protected"):
+                allowed |= EXPORT_STATES["protected"]
+            if filters.get("include_redirects"):
+                allowed |= EXPORT_STATES["redirects"]
+            if latest["classification"] not in allowed:
+                continue
+        if filters.get("classification") and latest["classification"] != filters["classification"]:
+            continue
+        if filters.get("status") and not any(
+            a.get("final_status", a.get("status")) == filters["status"]
+            for a in latest.get("http", [])
+        ):
+            continue
+        selected.append(asset)
+    return selected

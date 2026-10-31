@@ -13,11 +13,11 @@ from pathlib import Path
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--exe", default="dist/wayback_atlas.exe")
-    parser.add_argument("--expected-version", default="3.3.0")
+    parser.add_argument("--exe", default="dist/wayback_recon.exe")
+    parser.add_argument("--expected-version", default="4.0.1")
     args = parser.parse_args()
     executable = Path(args.exe).resolve(strict=True)
-    with tempfile.TemporaryDirectory(prefix="atlas-release-smoke-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="recon-release-smoke-") as temporary:
         directory = Path(temporary)
 
         def run(*arguments: str, input_text: str | None = None) -> str:
@@ -42,6 +42,8 @@ def main() -> None:
         assert "doctor" in run("--help")
         assert "--cc-index" in run("discover", "--help")
         assert "--max-pages" in run("resume", "--help")
+        assert "--only-unchecked" in run("check", "--help")
+        assert "--final-report-only" in run("watch", "--help")
         assert json.loads(run("runs", "--json")) == []
         assert "TLS" in run("doctor")
         hosts = directory / "hosts.txt"
@@ -56,15 +58,35 @@ def main() -> None:
         run("backup", str(backup))
         with closing(sqlite3.connect(backup)) as database:
             assert database.execute("SELECT count(*) FROM assets").fetchone()[0] == 2
+        with closing(sqlite3.connect(directory / "inventory.sqlite3")) as database, database:
+            for hostname, status in (("api.example.com", 403), ("old.example.com", 200)):
+                sample = {
+                    "hostname": hostname,
+                    "checked_at": "2026-10-31",
+                    "state": "online",
+                    "dns_state": "resolved",
+                    "http": [{"status": status}],
+                }
+                database.execute(
+                    "INSERT INTO checks(target,hostname,checked_at,payload) VALUES (?,?,?,?)",
+                    ("example.com", hostname, sample["checked_at"], json.dumps(sample)),
+                )
         run("export", "example.com")
         reports = list((directory / "reports" / "example.com").glob("*/report.json"))
         assert len(reports) == 2  # Import auto-export and explicit export, separate bundles.
         assert all((path.parent / "inventory.csv").is_file() for path in reports)
         assert all(
-            "WAYBACK ATLAS" in (path.parent / "report.html").read_text(encoding="utf-8")
+            "WAYBACK-RECON" in (path.parent / "report.html").read_text(encoding="utf-8")
             for path in reports
         )
         assert not list(directory.glob("*.csv"))
+        latest_report = max(reports, key=lambda path: path.parent.name)
+        assert (latest_report.parent / "alive.txt").read_text() == ""
+        assert (latest_report.parent / "forbidden.txt").read_text().strip() == "api.example.com"
+        assert (
+            latest_report.parent / "alive_candidates.txt"
+        ).read_text().strip() == "old.example.com"
+        assert "forbidden" in run("inventory", "example.com", "--classification", "forbidden")
         # Seed a durable mid-page fixture, then exercise the frozen resume code with no network.
         job = "offline-smoke-checkpoint"
         with (
@@ -113,6 +135,9 @@ def main() -> None:
         )
         output = run(input_text="\ninvalid\n11\n1\n\n0\n")
         assert "(o)" in output and "Please type one" in output and "TLS" in output
+        assert "Find hosts + archived URLs" in output
+        assert "Check saved hosts once" in output
+        assert "FIRST RUN:" in output
         assert "0/1/2/3" not in output
         assert "Input closed" in run(input_text="")
     print(

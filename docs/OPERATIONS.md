@@ -1,22 +1,23 @@
 # Operations, data and troubleshooting
 
-Applies to Wayback Atlas 3.3.0. Commands below run in CMD from the repository
+Applies to Wayback-Recon 4.0.1. Commands below run in CMD from the repository
 root. In PowerShell prefix the launcher with `.\`. Use only authorized targets.
 
 ## Keep a consistent workspace
 
 ```cmd
-wayback_atlas.bat --output-dir "D:\Recon\Example" discover example.com --sources wayback crtsh certspotter
-wayback_atlas.bat --output-dir "D:\Recon\Example" inventory example.com
-wayback_atlas.bat --output-dir "D:\Recon\Example" check example.com --concurrency 4 --timeout 5
-wayback_atlas.bat --output-dir "D:\Recon\Example" watch example.com --dns-only --rounds 12 --interval 300
-wayback_atlas.bat --output-dir "D:\Recon\Example" export example.com
+wayback_recon.bat --output-dir "D:\Recon\Example" discover example.com --sources wayback crtsh certspotter
+wayback_recon.bat --output-dir "D:\Recon\Example" inventory example.com
+wayback_recon.bat --output-dir "D:\Recon\Example" check example.com --concurrency 4 --timeout 5
+wayback_recon.bat --output-dir "D:\Recon\Example" watch example.com --dns-only --rounds 12 --interval 300
+wayback_recon.bat --output-dir "D:\Recon\Example" export example.com
 ```
 
-Resolution order: `--output-dir`, then `WAYBACK_ATLAS_OUTPUT_DIR`, then the legacy
+Resolution order: `--output-dir`, `WAYBACK_RECON_OUTPUT_DIR`, then `WAYBACK_ATLAS_OUTPUT_DIR`, then the legacy
 `DORK_SEARCHER_OUTPUT_DIR`. With none set, try the actual Desktop location plus
-`Wayback_Atlas_Results`, then `%LOCALAPPDATA%\WaybackAtlas\Results` when available,
-then `~/Wayback_Atlas_Results`. An explicit unwritable path fails without fallback.
+`Wayback_Recon_Results`, then `%LOCALAPPDATA%\WaybackRecon\Results` when available,
+then `~/Wayback_Recon_Results`. Existing Desktop `Wayback_Atlas_Results` with an
+inventory database is reused first. An explicit unwritable path fails without fallback.
 The dashboard/report message shows the path actually used. Changing it opens a
 different inventory; it does not move or merge the previous database.
 
@@ -44,8 +45,10 @@ Discovery queries third-party services; it does not fetch discovered target page
 `check`/`watch` resolve A and AAAA and make two random-name DNS controls under the
 root per round. HTTP mode then tries up to two public addresses per host, preferring
 both families, with HTTPS then HTTP as needed. Connections use the resolved address
-with the target Host/SNI. They request `/`, do not follow redirects, and close the
-response stream without collecting the body. This is not port scanning or a crawl.
+with the target Host/SNI. They request `/`, inspect up to 64 KiB, and follow bounded
+internal redirects after public-address validation at each hop. Two random-name HTTP
+controls detect generic wildcard pages. This is not port scanning or a site crawl.
+See [classification](WEBPAGE_CLASSIFICATION.md) for exact limits, outputs and migration.
 
 Private-only answers are stored but not HTTP-probed. `--dns-only` never sends HTTP.
 HTTP sampling ignores proxy environment settings; provider requests use Requests'
@@ -63,7 +66,7 @@ Samples include a shared round ID, finish time and duration; old samples remain 
 ## Import formats and limits
 
 ```cmd
-wayback_atlas.bat --output-dir "D:\Recon\Example" import example.com "D:\Recon\hosts.txt"
+wayback_recon.bat --output-dir "D:\Recon\Example" import example.com "D:\Recon\hosts.txt"
 ```
 
 Files must be UTF-8 (BOM accepted), at most 25 MiB. At most 50,000 distinct
@@ -103,8 +106,8 @@ Import does not retain arbitrary fields or promote imported provenance to live p
 
 JSON Lines/NDJSON (`.jsonl`/`.ndjson`) accepts one JSON record per nonempty line,
 including Subfinder's `host`/`source` records. Parse errors identify the line without
-echoing its contents. An entire `wayback-recon` JSON report is not supported
-directly; use its CSV export instead. An Atlas JSON
+echoing its contents. An entire `wayback-parameters` JSON report is not supported
+directly; use its CSV export instead. An Wayback-Recon JSON
 report can seed its host list, but nested evidence, checks, original local discovery
 times and provider provenance are not restored: the new source is `import`.
 Import is not a database-backup restore.
@@ -121,7 +124,7 @@ Exports have `schema_version: 1`. Inspect these sections:
 - `provider_runs`: latest 100 audit entries, including source errors and page/batch commits.
 - `provider_runs[].payload.metadata`: CompleteDNS events and other provider context.
 
-Atlas timestamps are UTC; provider timestamps keep their provider-specific format.
+Wayback-Recon timestamps are UTC; provider timestamps keep their provider-specific format.
 crt.sh evidence uses log entry time; Cert Spotter evidence uses certificate
 `not_before`, not DNS creation time. Imported URLs can contribute to URL summary
 counts; those counts alone do not prove Wayback provenance. Check each evidence source.
@@ -133,8 +136,8 @@ includes `crawl_index`; `runs --json` includes pinned index IDs and query option
 Date-range jobs improve coverage but do
 not turn this into an exhaustive lifetime history.
 
-`online` and `tls_error` go into the alive list; the latter does not prove a
-successful HTTP application response. Down-observed includes NXDOMAIN, no address,
+Only `confirmed_webpage` goes into the alive list. HTTP errors, TLS failures,
+unvalidated 200 responses and generic wildcard pages are excluded. Down-observed includes NXDOMAIN, no address,
 and unreachable. Unknown, unchecked and private-only hosts are not classified as
 dead. The availability percentage includes conclusive HTTP-mode observations,
 including DNS negatives; DNS-only runs do not contribute. It is not time-weighted.
@@ -157,7 +160,7 @@ Ctrl+C retains completed samples but can interrupt the final report export; run
 
 ## Backup, restore and privacy
 
-1. Stop every Atlas process using the output directory, including watch jobs.
+1. Stop every Wayback-Recon process using the output directory, including watch jobs.
 2. Copy the entire output directory to a protected backup location. Preserve SQLite
    `-wal`/`-shm` sidecars if present; never discard them to resolve a lock problem.
 3. Keep the original untouched. To test a restore, use the copied directory with
@@ -167,7 +170,7 @@ Ctrl+C retains completed samples but can interrupt the final report export; run
 For a consistent database-only copy, including while a watcher runs, use:
 
 ```cmd
-wayback_atlas.bat --output-dir "D:\Recon\Example" backup "D:\Recon\Example-backup.sqlite3"
+wayback_recon.bat --output-dir "D:\Recon\Example" backup "D:\Recon\Example-backup.sqlite3"
 ```
 
 This uses SQLite's backup API, checks integrity and refuses to overwrite an existing
@@ -189,7 +192,7 @@ output path. Run `git status --short` before committing. Do not publish API keys
 
 ## Exit codes and unattended use
 
-| Code | Atlas meaning |
+| Code | Wayback-Recon meaning |
 | --- | --- |
 | 0 | Command completed; can include empty results, failed hosts or partial provider coverage |
 | 1 | All selected discovery sources failed; or any incomplete/failed with discover/resume `--strict`; or `doctor` found a local error |
@@ -202,13 +205,13 @@ any source error or truncation, but cannot establish index completeness. An impo
 with zero retained rows can still return 0. `runs --json` offers machine-readable
 checkpoint summaries; other data commands use saved JSON reports.
 Use absolute output paths, prevent overlapping jobs, and preserve logs if you
-configure an external scheduler yourself. Atlas installs no scheduled tasks.
+configure an external scheduler yourself. Wayback-Recon installs no scheduled tasks.
 
 ## Troubleshooting
 
 | Symptom | Check / action |
 | --- | --- |
-| `wayback-atlas` not recognized | Use the bundled launcher or install/activate the Python environment. |
+| `wayback-recon` not recognized | Use the bundled launcher or install/activate the Python environment. |
 | Running source changes shows the old behavior | The batch file prefers the EXE; use `python -m src.cli` or rebuild. |
 | Access denied writing results | Choose a writable absolute `--output-dir`; close files held by other apps. Elevation is not normally needed. |
 | Inventory is empty | Confirm the exact root and output directory. Discovery/import must run before check/watch. |
@@ -222,7 +225,7 @@ configure an external scheduler yourself. Atlas installs no scheduled tasks.
 | Many hosts switch down together | Check local connectivity/resolver and compare another permitted vantage point. This is not proof of target outages. |
 | Database locked | Stop duplicate writers and wait for normal shutdown. Do not delete SQLite sidecars. |
 | SSL or corporate proxy trouble | Check system time/trust policy and distinguish provider access from direct HTTP probes. Do not disable TLS verification. |
-| A copied `.venv` cannot start | Create `.venv-atlas` using an installed Python; copied environments retain interpreter paths. |
+| A copied `.venv` cannot start | Create `.venv-recon` using an installed Python; copied environments retain interpreter paths. |
 | Provider response exceeds 16 MiB | Use a narrower archive query, a different documented source or a split export import. |
 | Old pytest folders deny access | Use the verification script's separate cache paths. Those caches are not needed by the EXE. |
 

@@ -25,16 +25,21 @@ def desktop_directory() -> Path:
 
 def result_directory(explicit: str | None = None) -> Path:
     configured = (
-        explicit or os.getenv("WAYBACK_ATLAS_OUTPUT_DIR") or os.getenv("DORK_SEARCHER_OUTPUT_DIR")
+        explicit
+        or os.getenv("WAYBACK_RECON_OUTPUT_DIR")
+        or os.getenv("WAYBACK_ATLAS_OUTPUT_DIR")
+        or os.getenv("DORK_SEARCHER_OUTPUT_DIR")
     )
     if configured:
         candidates = [Path(configured).expanduser()]
     else:
-        candidates = [desktop_directory() / "Wayback_Atlas_Results"]
+        legacy = desktop_directory() / "Wayback_Atlas_Results"
+        candidates = [legacy] if (legacy / "inventory.sqlite3").is_file() else []
+        candidates.append(desktop_directory() / "Wayback_Recon_Results")
         local = os.getenv("LOCALAPPDATA")
         if local:
-            candidates.append(Path(local) / "WaybackAtlas" / "Results")
-        candidates.append(Path.home() / "Wayback_Atlas_Results")
+            candidates.append(Path(local) / "WaybackRecon" / "Results")
+        candidates.append(Path.home() / "Wayback_Recon_Results")
     errors = []
     for path in candidates:
         try:

@@ -260,7 +260,7 @@ def collect(
 
 
 def import_records(path: str, target: str, limit: int = 50000) -> DiscoveryResult:
-    """Accept text, CSV, JSON, RapidDNS JSON, or an Atlas export without executing content."""
+    """Import text, CSV, JSON or a Wayback-Recon report without executing content."""
     source = Path(path).expanduser()
     if limit < 1:
         raise ValueError("Import limit must be positive")

@@ -18,7 +18,7 @@ def test_default_output_uses_desktop(monkeypatch, tmp_path):
     monkeypatch.setattr("src.workspace.desktop_directory", lambda: tmp_path)
     monkeypatch.delenv("WAYBACK_ATLAS_OUTPUT_DIR", raising=False)
     monkeypatch.delenv("DORK_SEARCHER_OUTPUT_DIR", raising=False)
-    assert result_directory() == tmp_path / "Wayback_Atlas_Results"
+    assert result_directory() == tmp_path / "Wayback_Recon_Results"
 
 
 def test_dashboard_has_new_workflows_without_retired_providers(monkeypatch, tmp_path):
@@ -26,9 +26,9 @@ def test_dashboard_has_new_workflows_without_retired_providers(monkeypatch, tmp_
     monkeypatch.setattr(cli, "console", Console(file=stream, width=100, color_system=None))
     cli.dashboard(tmp_path)
     output = stream.getvalue()
-    assert "WAYBACK ATLAS" in output
-    assert "Watch changes" in output
-    assert "Archive dork workbench" in output
+    assert "WAYBACK-RECON" in output
+    assert "Monitor saved hosts repeatedly" in output
+    assert "Search saved URLs / dorks" in output
     assert "Google" not in output and "Dogpile" not in output
 
 
@@ -57,10 +57,24 @@ def test_spider_dashboard_fits_terminal_width(monkeypatch, width):
     cli.dashboard(cli.Path("results"))
     output = stream.getvalue()
     assert "(o)" in output and "(___)" in output
-    assert "DISCOVER & CHECK" in output
-    assert "YOUR WORKSPACE" in output
+    assert "FIND HOSTS & ARCHIVES" in output
+    assert "SAVED DATA & REPORTS" in output
     assert "Enter" in output
     assert all(len(line) <= width for line in output.splitlines())
+
+
+def test_every_main_option_has_help_and_preserves_existing_numbers(monkeypatch):
+    stream = io.StringIO()
+    monkeypatch.setattr(cli, "console", Console(file=stream, width=100, color_system=None))
+    cli.dashboard(cli.Path("results"))
+    output = stream.getvalue()
+    assert set(cli.MENU_DETAILS) == set(cli.MENU_LABELS) - {"0"}
+    for key in cli.MENU_DETAILS:
+        assert cli.MENU_LABELS[key] in output
+    assert "FIRST RUN: 1 Find hosts -> 4 Check hosts -> 10 Save reports" in output
+    assert "Does not run new checks" in output
+    assert "This does not resume monitoring" in output
+    assert "No new discovery" in output
 
 
 def test_ascii_banner_and_legacy_cmd_rendering(monkeypatch):
@@ -72,7 +86,7 @@ def test_ascii_banner_and_legacy_cmd_rendering(monkeypatch):
     )
     cli.dashboard(cli.Path("results"))
     stream.flush()
-    assert b"WAYBACK ATLAS" in buffer.getvalue()
+    assert b"WAYBACK-RECON" in buffer.getvalue()
 
 
 def test_choice_retries_blank_and_invalid_without_long_choice_list(monkeypatch):

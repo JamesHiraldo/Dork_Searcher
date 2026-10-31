@@ -19,7 +19,7 @@ from . import __version__
 
 def diagnose(directory: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = [
-        {"check": "Atlas", "status": "ok", "detail": __version__},
+        {"check": "Wayback-Recon", "status": "ok", "detail": __version__},
         {
             "check": "Runtime",
             "status": "ok",

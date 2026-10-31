@@ -21,7 +21,7 @@ else:  # pragma: no cover
 
 
 CDX_ENDPOINT = "https://web.archive.org/cdx/search/cdx"
-DEFAULT_USER_AGENT = "WaybackAtlas/3.1"
+DEFAULT_USER_AGENT = "Wayback-Recon/4.0"
 
 
 class WaybackError(RuntimeError):

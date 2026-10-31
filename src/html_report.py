@@ -29,6 +29,7 @@ th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04
 td{overflow-wrap:anywhere}tr:last-child td{border-bottom:0}.host{min-width:240px}
 .state{display:inline-block;border:1px solid var(--line);border-radius:6px;padding:2px 8px;
 white-space:nowrap}.up{color:#87ebbc}.down{color:#ffbaa6}.unknown{color:#eed18a}
+.protected{color:#ffb25c}.neutral{color:var(--muted)}
 details{margin:8px 0}summary{cursor:pointer;color:var(--accent)}pre{white-space:pre-wrap;
 overflow-wrap:anywhere;background:var(--bg);padding:12px;border-radius:8px;font-size:12px}
 .note{border-left:3px solid #e1a4ff;padding:8px 16px;margin:18px 0;color:var(--muted)}
@@ -47,10 +48,28 @@ def text(value: Any) -> str:
 
 def render_html(report: dict[str, Any]) -> str:
     assets = report["assets"]
-    states = Counter(a["latest"]["state"] for a in assets)
+    states = Counter(a["latest"]["classification"] for a in assets)
     cards = [
         ("Discovered hosts", len(assets)),
-        ("HTTP responding", states["online"]),
+        ("Confirmed webpages", states["confirmed_webpage"]),
+        ("Alive candidates", states["alive_candidate"]),
+        (
+            "Redirects",
+            sum(
+                states[s]
+                for s in ("redirect", "external_redirect", "redirect_loop", "redirect_limit")
+            ),
+        ),
+        ("Protected / forbidden", states["forbidden"] + states["authentication_required"]),
+        (
+            "HTTP errors",
+            sum(
+                states[s]
+                for s in ("bad_request", "not_found", "server_error", "error_page", "http_response")
+            ),
+        ),
+        ("Connection failures", states["connection_failed"] + states["timeout"]),
+        ("DNS only", states["dns_only"]),
         ("TLS errors", states["tls_error"]),
         ("Down observed", sum(states[s] for s in ("nxdomain", "no_address", "unreachable"))),
         ("Intermittent candidates", sum(bool(a["intermittent_candidate"]) for a in assets)),
@@ -63,13 +82,29 @@ def render_html(report: dict[str, Any]) -> str:
     rows = []
     for asset in assets:
         latest = asset["latest"]
-        state = latest["state"]
+        state = latest["classification"]
         style = (
             "up"
-            if state == "online"
-            else ("down" if state in ("nxdomain", "no_address", "unreachable") else "unknown")
+            if state == "confirmed_webpage"
+            else (
+                "down"
+                if state
+                in (
+                    "nxdomain",
+                    "no_address",
+                    "connection_failed",
+                    "timeout",
+                    "forbidden",
+                    "server_error",
+                )
+                else "unknown"
+            )
         )
         evidence = asset["evidence"]
+        if state in ("forbidden", "server_error"):
+            style = "protected"
+        elif state in ("dns_only", "private_address", "unknown", "unchecked"):
+            style = "neutral"
         # Keep the HTML readable; the adjacent JSON contains all retained evidence/samples.
         detail = {"evidence_preview": evidence[:20], "recent_samples": asset["samples"][-5:]}
         details = (
@@ -83,7 +118,10 @@ def render_html(report: dict[str, Any]) -> str:
             f"<td>{text(', '.join(asset['sources']))}</td>"
             f'<td><span class="state {style}">{text(state)}</span>'
             f"<br><small>DNS: {text(latest.get('dns_state', 'unchecked'))}</small></td>"
+            f"<td>{text(latest.get('final_status'))}<br>{text(latest.get('title'))}"
+            f"<br><small>{text(latest.get('final_url'))}</small></td>"
             f"<td>{text(', '.join(latest.get('addresses', [])) or '—')}</td>"
+            f"<td>{text(', '.join(latest.get('cnames', [])) or '—')}</td>"
             f"<td>{text(asset['transitions'])} / {text(asset['dns_transitions'])}"
             f"<br><small>{'Candidate' if asset['intermittent_candidate'] else 'No flag'}"
             "</small></td>"
@@ -94,7 +132,8 @@ def render_html(report: dict[str, Any]) -> str:
         (
             '<div class="scroll"><table><thead><tr><th scope="col">Host / evidence</th>'
             '<th scope="col">Sources</th><th scope="col">Latest state</th>'
-            '<th scope="col">Addresses</th>'
+            '<th scope="col">Status / title / final URL</th>'
+            '<th scope="col">Addresses</th><th scope="col">CNAME</th>'
             '<th scope="col">Changes HTTP / DNS</th><th scope="col">Local discovery (UTC)</th>'
             "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
         )
@@ -126,20 +165,29 @@ def render_html(report: dict[str, Any]) -> str:
     )
     notes = "".join(f"<li>{text(note)}</li>" for note in report["notes"])
     parameters = ", ".join(report["archive_summary"]["parameter_names"]) or "None observed"
+    groups = (
+        "".join(
+            f"<details><summary>HTTP {text(group['status'])}: {group['host_count']} hosts</summary>"
+            f"<p>Fingerprint: {text(group['fingerprint'])}</p>"
+            f"<pre>{text(chr(10).join(group['hosts']))}</pre></details>"
+            for group in report.get("response_groups", [])
+        )
+        or '<p class="muted">No duplicate response fingerprints observed.</p>'
+    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy"
 content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
-<title>{text(report["target"])} — Wayback Atlas report</title><style>{STYLES}</style></head>
-<body><main><header><div class="brand">WAYBACK ATLAS / THE RECON WEB</div>
+<title>{text(report["target"])} — Wayback-Recon report</title><style>{STYLES}</style></head>
+<body><main><header><div class="brand">WAYBACK-RECON / THE RECON WEB</div>
 <h1>{text(report["target"])}</h1>
 <p class="muted">Reconnaissance snapshot · {text(report["generated_at"])}</p>
 <p>Use only on assets you own or have permission to assess.</p>
 <nav aria-label="Companion exports"><a href="report.json">Full JSON</a>
 <a href="inventory.csv">Inventory CSV</a><a href="hosts.txt">All hosts</a>
-<a href="alive.txt">Alive observations</a><a href="down_observed.txt">Down observations</a>
+<a href="alive.txt">Confirmed webpages</a><a href="down_observed.txt">Down observations</a>
 <a href="intermittent.txt">Intermittent candidates</a></nav></header>
 <section aria-label="Summary" class="cards">{metrics}</section>
 <p class="note">Offline report: no scripts, external resources or automatic target requests.
@@ -147,15 +195,16 @@ Historical evidence is not proof of current ownership or availability.
 Treat this report as private research data.</p>
 <h2>Host inventory</h2>
 <p class="muted">{len(assets)} hosts · Expand a host's evidence for context.</p>{hosts}
+<h2>Shared response fingerprints</h2>{groups}
 <h2>Archive overview</h2>
 <p>Unique endpoints: {text(report["archive_summary"]["unique_endpoints"])}</p>
 <p>Observed parameter names: {text(parameters)}</p>
 <h2>Provider activity</h2>
 <p class="muted">Latest 100 audit entries, including page commits and errors.
 A successful page does not establish complete provider coverage;
-inspect saved run status in Atlas.</p>{providers}
+inspect saved run status in Wayback-Recon.</p>{providers}
 <h2>How to interpret this report</h2><ul>{notes}</ul>
 <footer>{text(report["history_window"])}.
 Companion links require the other files in this export folder.
-Generated locally by Wayback Atlas.</footer></main></body></html>
+Generated locally by Wayback-Recon.</footer></main></body></html>
 """

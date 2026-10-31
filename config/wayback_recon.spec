@@ -1,4 +1,4 @@
-# -*- mode: python ; coding: utf-8 -*-
+# Wayback-Recon Windows executable build specification.
 
 from pathlib import Path
 import ssl
@@ -31,7 +31,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='wayback_atlas',
+    name='wayback_recon',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -1,4 +1,34 @@
-# Wayback Atlas release notes
+# Wayback-Recon release notes
+
+## 4.0.1 — workflow reliability
+
+- Main menu labels explain each action and distinguish discovery, checking and saved data.
+- Menu discovery and imports now export reports automatically, matching CLI behavior.
+- Every completed check/watch round exports a snapshot and prints its HTML/folder paths.
+  Watch accepts `--final-report-only` for disk-conscious long runs.
+- `check --only-unchecked` (also menu 4) selects hosts with no saved check of any kind.
+  Completed/total progress counts make large checks easier to follow.
+- Failed writes/flushes clean up their temporary file without replacing existing results.
+- Async host/control timeout handling also recognizes Python 3.10's distinct timeout class.
+
+Remaining larger opportunities: streaming exports for very large inventories, per-request
+rate limits, configurable snapshot retention, and dedicated persistent monitoring-job
+checkpoints. These are not implemented by this release; unchecked selection is not a
+full monitoring checkpoint system.
+
+## 4.0.0 — Wayback-Recon and validated webpage results
+
+October 31, 2026 (America/New_York).
+
+- Renamed package, main command, launcher, executable, CI artifacts and GitHub URLs.
+  Main command: `wayback-recon`; legacy parameter collector: `wayback-parameters`.
+- Central classification separates HTTP reachability from webpage accessibility.
+  `alive.txt` now aliases confirmed webpages, not every responding HTTP/TLS endpoint.
+- Bounded HTML inspection, title/error signals, fingerprints, per-scheme evidence,
+  internal redirect chains/loops, external redirect labels and HTTP wildcard controls.
+- JSON schema 2, categorized lists, HTML/CSV classification fields and CLI filters.
+- Existing SQLite checks are reclassified on export without changing raw history.
+  Old 200s without content remain candidates until checked again.
 
 ## 3.3.0 — offline HTML and public-tree cleanup
 

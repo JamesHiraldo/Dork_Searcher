@@ -1,4 +1,4 @@
-"""Legacy command alias. Web scraping backends were retired in Atlas 3.0."""
+"""Legacy command alias. Web scraping backends were retired in Wayback-Recon 3.0."""
 
 from __future__ import annotations
 

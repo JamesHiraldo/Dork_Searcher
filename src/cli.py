@@ -1,10 +1,11 @@
-"""Wayback Atlas terminal dashboard and scriptable workflows."""
+"""Wayback-Recon terminal dashboard and scriptable workflows."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
+import logging
 import math
 import sqlite3
 import sys
@@ -16,7 +17,7 @@ from typing import Any
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TaskID, TextColumn
 from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
@@ -28,7 +29,7 @@ from .checkpoints import Checkpoints, run_discovery
 from .diagnostics import diagnose
 from .discovery import import_records
 from .discovery_pages import SOURCES
-from .inventory import Inventory
+from .inventory import Inventory, filter_assets
 from .scope import normalize_hostname
 from .workbench import RESOURCES, TEMPLATES, duckduckgo_link, filter_archive
 from .workspace import result_directory
@@ -45,28 +46,47 @@ SPIDER = r"""        |
    / /     \ \
 """.rstrip()
 MENU_LABELS = {
-    "1": "Discover & merge",
-    "2": "Wayback archive",
-    "3": "Subdomain sources",
-    "4": "Check availability",
-    "5": "Watch changes",
-    "6": "Inventory & history",
-    "7": "Import discoveries",
-    "8": "Archive dork workbench",
-    "9": "Research resources",
-    "10": "Export reports",
-    "11": "Diagnostics & backup",
-    "12": "Saved discovery / resume",
+    "1": "Find hosts + archived URLs",
+    "2": "Search Wayback by date",
+    "3": "Search one data source",
+    "4": "Check saved hosts once",
+    "5": "Monitor saved hosts repeatedly",
+    "6": "View saved hosts + status",
+    "7": "Import hosts from a file",
+    "8": "Search saved URLs / dorks",
+    "9": "Open research websites",
+    "10": "Save HTML, CSV + TXT reports",
+    "11": "Check setup / back up database",
+    "12": "Continue a saved discovery",
     "0": "Exit",
+}
+MENU_DETAILS = {
+    "1": "Query Wayback, Common Crawl and certificate logs; save discoveries. No live host checks.",
+    "2": "Collect archived URLs from Wayback within optional start/end dates.",
+    "3": "Choose one provider: certificate logs, RapidDNS, CompleteDNS or Common Crawl.",
+    "4": "Test hosts already saved for a domain. Choose DNS only or DNS + webpage checks.",
+    "5": "Repeat checks at an interval to observe hosts going up or down. No new discovery.",
+    "6": "Read the stored inventory and latest classifications. Does not run new checks.",
+    "7": "Add hosts/URLs from TXT, CSV, JSON or JSONL. Does not check whether they are alive.",
+    "8": "Filter saved archive URLs, save a dork template, or open a DuckDuckGo browser search.",
+    "9": "Open an external research site in your browser. Results are not imported automatically.",
+    "10": "Create a new report folder from saved data. Does not discover or check hosts.",
+    "11": "Diagnose the local setup without network requests, or copy the full SQLite database.",
+    "12": "Resume a previous discovery from its checkpoint. This does not resume monitoring.",
 }
 
 
-def menu_panel(title: str, options: dict[str, str]) -> Panel:
+def menu_panel(title: str, options: dict[str, str], details: dict[str, str] | None = None) -> Panel:
     table = Table.grid(padding=(0, 1), expand=True)
     table.add_column(style="bold cyan", width=3, no_wrap=True)
     table.add_column(style="white", ratio=1)
     for key, label in options.items():
-        table.add_row(f"{key:>2}", label)
+        description = Text(label, style="bold white")
+        if details and key in details:
+            description.append("\n" + details[key], style="dim")
+        table.add_row(f"{key:>2}", description)
+        if details and key != next(reversed(options)):
+            table.add_row("", "")
     return Panel(table, title=Text(title, style="bold cyan"), border_style="dim cyan")
 
 
@@ -95,7 +115,7 @@ def numbered_menu(title: str, options: dict[str, str], default: str | None = Non
 
 
 def dashboard(directory: Path) -> None:
-    title = Text("WAYBACK ATLAS\n", style="bold cyan")
+    title = Text("WAYBACK-RECON\n", style="bold cyan")
     title.append(f"THE RECON WEB  /  {__version__}\n\n", style="bold magenta")
     title.append("Find the past. Track the present.\n", style="white")
     title.append("Archives / Subdomains / Availability", style="dim")
@@ -109,31 +129,50 @@ def dashboard(directory: Path) -> None:
         header.add_row(Text(SPIDER, style="bold magenta"))
         header.add_row(title)
     console.print(Panel(header, border_style="cyan", padding=(0, 1)))
-    console.print(Text("START HERE   1 Discover  ->  4 Check  ->  5 Watch", style="dim"))
-    left = menu_panel("DISCOVER & CHECK", {str(n): MENU_LABELS[str(n)] for n in range(1, 6)})
-    right = menu_panel("YOUR WORKSPACE", {str(n): MENU_LABELS[str(n)] for n in range(6, 13)})
-    if console.width >= 76:
+    console.print(Text("FIRST RUN: 1 Find hosts -> 4 Check hosts -> 10 Save reports", style="bold"))
+    console.print(
+        Text("Already collected data? Use 6 to view it, or 12 to continue discovery.", style="dim")
+    )
+    groups = [
+        ("FIND HOSTS & ARCHIVES", ("1", "2", "3", "12")),
+        ("CHECK LIVE AVAILABILITY", ("4", "5")),
+        ("SAVED DATA & REPORTS", ("6", "7", "8", "10")),
+        ("LINKS & MAINTENANCE", ("9", "11")),
+    ]
+    panels = [
+        menu_panel(title, {key: MENU_LABELS[key] for key in keys}, MENU_DETAILS)
+        for title, keys in groups
+    ]
+    if console.width >= 110:
         columns = Table.grid(padding=(0, 1), expand=True)
         columns.add_column(ratio=1)
         columns.add_column(ratio=1)
-        columns.add_row(left, right)
+        columns.add_row(panels[0], panels[2])
+        columns.add_row(panels[1], panels[3])
         console.print(columns)
     else:
-        console.print(left, right)
+        console.print(*panels)
     console.print(Text(" 0  Exit    |    Choose a number, then press Enter.", style="bold white"))
     console.print(Text(f"Results: {directory}", style="dim"), overflow="fold")
     console.print(Text(NOTICE, style="yellow"))
 
 
-def show_inventory(store: Inventory, target: str) -> None:
+def show_inventory(store: Inventory, target: str, filters: dict[str, Any] | None = None) -> None:
     report = store.report(target)
+    report["assets"] = filter_assets(report["assets"], filters or {})
     table = Table(title=f"{target} / {len(report['assets'])} hosts", box=box.ROUNDED)
     table.add_column("Hostname", overflow="fold", min_width=20)
     for column in ("Sources", "Latest state", "Changes\nHTTP/DNS", "Found"):
         table.add_column(column, overflow="fold")
     for asset in report["assets"][:200]:
-        state = asset["latest"]["state"]
-        color = "green" if state == "online" else "yellow" if state == "unchecked" else "white"
+        state = asset["latest"]["classification"]
+        color = (
+            "green"
+            if state == "confirmed_webpage"
+            else "yellow"
+            if state in ("alive_candidate", "redirect", "authentication_required")
+            else "white"
+        )
         if asset["intermittent_candidate"]:
             state += " / intermittent?"
         table.add_row(
@@ -221,6 +260,10 @@ def monitor(
     concurrency: int = 8,
     timeout: float = 5,
     host_timeout: float = 45,
+    max_redirects: int = 10,
+    read_timeout: float = 10,
+    only_unchecked: bool = False,
+    export_each_round: bool = True,
 ) -> None:
     if rounds < 1 or rounds > 10000 or not math.isfinite(interval) or not 10 <= interval <= 86400:
         raise ValueError("Use 1-10000 rounds with an interval of 10-86400 seconds")
@@ -228,13 +271,28 @@ def monitor(
         raise ValueError("Concurrency must be 1-50; timeout must be >0 and <=60 seconds")
     if not math.isfinite(host_timeout) or not 0 < host_timeout <= 600:
         raise ValueError("Host timeout must be >0 and <=600 seconds")
-    hosts = store.hosts(target)
+    if only_unchecked and rounds != 1:
+        raise ValueError("Unchecked-only selection is for one check, not repeated monitoring")
+    if (
+        not 0 <= max_redirects <= 10
+        or not math.isfinite(read_timeout)
+        or not 0 < read_timeout <= 60
+    ):
+        raise ValueError("Redirect limit must be 0-10; read timeout must be >0 and <=60 seconds")
+    hosts = store.hosts(target, only_unchecked=only_unchecked)
     if not hosts:
+        if only_unchecked and store.hosts(target):
+            console.print("All saved hosts already have a check. Nothing to do; no requests sent.")
+            return
         raise ValueError("No hosts stored for this target. Discover or import first.")
     for number in range(rounds):
         console.print(f"Sample {number + 1}/{rounds}: {len(hosts)} hosts; Ctrl+C stops safely")
         with Progress(
-            SpinnerColumn("line"), TextColumn("{task.description}"), console=console
+            SpinnerColumn("line"),
+            TextColumn("{task.description}"),
+            BarColumn(bar_width=16),
+            MofNCompleteColumn(),
+            console=console,
         ) as progress:
             task = progress.add_task(
                 "Checking DNS and HTTP" if http else "Checking DNS", total=len(hosts)
@@ -254,10 +312,16 @@ def monitor(
                     timeout=timeout,
                     http=http,
                     host_timeout=host_timeout,
+                    max_redirects=max_redirects,
+                    read_timeout=read_timeout,
                     on_result=completed,
                 )
             )
         show_inventory(store, target)
+        if export_each_round or number + 1 == rounds:
+            report_path = store.export(target, store.path.parent)
+            console.print(f"HTML report: {report_path.with_suffix('.html')}")
+            console.print(f"All result files: {report_path.parent}")
         if number + 1 < rounds:
             console.print(f"Next round in {interval:g}s. Each sample is already saved.")
             time.sleep(interval)
@@ -346,6 +410,7 @@ def main_menu(directory: Path) -> None:
             if choice == "0":
                 return
             console.rule(Text(f"{choice}. {MENU_LABELS[choice]}", style="bold cyan"))
+            console.print(Text(MENU_DETAILS[choice], style="dim"))
             try:
                 if choice == "9":
                     resource_menu()
@@ -437,15 +502,31 @@ def main_menu(directory: Path) -> None:
                     mode = numbered_menu(
                         "WHAT SHOULD WE CHECK?",
                         {
-                            "1": "DNS + HTTP - check web availability",
-                            "2": "DNS only - no HTTP requests",
+                            "1": "DNS + webpages - classify pages, redirects and HTTP errors",
+                            "2": "DNS only - check name resolution; do not contact websites",
+                            **(
+                                {"3": "DNS + webpages - only hosts with no saved check yet"}
+                                if choice == "4"
+                                else {}
+                            ),
                             "0": "Back to main menu",
                         },
                         default="1",
                     )
                     if mode == "0":
                         continue
-                    monitor(store, target, rounds=rounds, interval=interval, http=mode == "1")
+                    if mode == "3":
+                        console.print(
+                            "Skips previously checked hosts, including DNS-only or failed checks."
+                        )
+                    monitor(
+                        store,
+                        target,
+                        rounds=rounds,
+                        interval=interval,
+                        http=mode != "2",
+                        only_unchecked=mode == "3",
+                    )
                 elif choice == "6":
                     show_inventory(store, target)
                 elif choice == "7":
@@ -463,6 +544,10 @@ def main_menu(directory: Path) -> None:
                         continue
                 elif choice == "10":
                     console.print(f"Exported: {store.export(target, directory)}")
+                if choice in ("1", "2", "3", "7"):
+                    report_path = store.export(target, directory)
+                    console.print(f"HTML report: {report_path.with_suffix('.html')}")
+                    console.print(f"All result files: {report_path.parent}")
             except KeyboardInterrupt:
                 console.print("Cancelled. Completed observations remain saved.")
             except (ValueError, OSError, sqlite3.Error) as exc:
@@ -477,14 +562,29 @@ def main_menu(directory: Path) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Wayback Atlas: archives, subdomains and availability"
+        description="Wayback-Recon: archives, subdomains and availability"
     )
     parser.add_argument("--output-dir", help="Output and database folder; defaults to Desktop")
-    parser.add_argument("--version", action="version", version=f"Wayback Atlas {__version__}")
+    parser.add_argument("--debug", action="store_true", help="Explain classification decisions")
+    parser.add_argument("--version", action="version", version=f"Wayback-Recon {__version__}")
     sub = parser.add_subparsers(dest="command")
     for name in ("discover", "check", "watch", "inventory", "export", "import", "dorks"):
         p = sub.add_parser(name)
         p.add_argument("target", help="Root domain; all its discovered child hosts are included")
+        if name in ("inventory", "export"):
+            p.add_argument("--only-webpages", action="store_true")
+            p.add_argument(
+                "--include-protected",
+                action="store_true",
+                help="Include protected hosts with --only-webpages",
+            )
+            p.add_argument(
+                "--include-redirects",
+                action="store_true",
+                help="Include redirects with --only-webpages",
+            )
+            p.add_argument("--status", type=int)
+            p.add_argument("--classification")
         if name == "discover":
             p.add_argument("--sources", nargs="+", choices=SOURCES, default=DEFAULT_SOURCES)
             p.add_argument(
@@ -521,6 +621,10 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--concurrency", type=int, default=8)
             p.add_argument("--timeout", type=float, default=5)
             p.add_argument(
+                "--read-timeout", type=float, default=10, help="Per-read timeout, 0-60 seconds"
+            )
+            p.add_argument("--max-redirects", type=int, default=10, help="Internal redirects, 0-10")
+            p.add_argument(
                 "--host-timeout",
                 type=float,
                 default=45,
@@ -529,6 +633,17 @@ def build_parser() -> argparse.ArgumentParser:
             if name == "watch":
                 p.add_argument("--rounds", type=int, default=5)
                 p.add_argument("--interval", type=float, default=60)
+                p.add_argument(
+                    "--final-report-only",
+                    action="store_true",
+                    help="Export only after the last round to reduce disk usage",
+                )
+            else:
+                p.add_argument(
+                    "--only-unchecked",
+                    action="store_true",
+                    help="Skip hosts with any previous check, including DNS-only/errors",
+                )
         elif name == "import":
             p.add_argument("file")
         elif name == "dorks":
@@ -567,6 +682,9 @@ def show_diagnostics(directory: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.debug:
+        logging.basicConfig(level=logging.WARNING)
+        logging.getLogger("src.classification").setLevel(logging.DEBUG)
     try:
         directory = result_directory(args.output_dir)
         if not args.command:
@@ -631,8 +749,12 @@ def main(argv: list[str] | None = None) -> int:
                     concurrency=args.concurrency,
                     timeout=args.timeout,
                     host_timeout=args.host_timeout,
+                    read_timeout=args.read_timeout,
+                    max_redirects=args.max_redirects,
                     rounds=getattr(args, "rounds", 1),
                     interval=getattr(args, "interval", 60),
+                    only_unchecked=getattr(args, "only_unchecked", False),
+                    export_each_round=not getattr(args, "final_report_only", False),
                 )
             elif args.command == "import":
                 result = import_records(args.file, target)
@@ -642,13 +764,14 @@ def main(argv: list[str] | None = None) -> int:
                 if result.truncated:
                     console.print("Import limit reached; some evidence was omitted.")
             elif args.command == "inventory":
-                show_inventory(store, target)
+                show_inventory(store, target, vars(args))
             elif args.command == "dorks":
                 rows = query_archive(store, target, args.query)
                 save_json(str(directory / "archive_matches.json"), rows)
                 console.print(f"{len(rows)} matches saved to {directory / 'archive_matches.json'}")
-            if args.command in ("discover", "export", "check", "watch", "import"):
-                console.print(f"Report: {store.export(target, directory)}")
+            if args.command in ("discover", "export", "import"):
+                filters = vars(args) if args.command == "export" else None
+                console.print(f"Report: {store.export(target, directory, filters=filters)}")
         return (
             1
             if "incomplete" in statuses or (statuses and all(s == "error" for s in statuses))

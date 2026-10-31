@@ -221,5 +221,6 @@ async def test_one_host_failure_and_deadline_do_not_cancel_batch(monkeypatch):
     assert len(saved) == 3
     assert len({r["round_id"] for r in result}) == 1
     assert result[0]["state"] == "online"
-    assert all(r["state"] == "unknown" for r in result[1:])
+    assert result[1]["state"] == "unknown"
+    assert result[2]["classification"] == "timeout"
     assert all("duration_seconds" in r for r in result)

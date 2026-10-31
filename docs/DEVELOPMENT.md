@@ -7,14 +7,14 @@ EXE was built with Python 3.12 on Windows. The configured CI matrix is Windows
 ## Install and test the source
 
 ```powershell
-python -m venv .venv-atlas
-.\.venv-atlas\Scripts\python.exe -m pip install -e ".[dev,build]"
-.\.venv-atlas\Scripts\python.exe -m src.cli --help
-.\scripts\verify.ps1 -PythonCommand ".\.venv-atlas\Scripts\python.exe"
+python -m venv .venv-recon
+.\.venv-recon\Scripts\python.exe -m pip install -e ".[dev,build]"
+.\.venv-recon\Scripts\python.exe -m src.cli --help
+.\scripts\verify.ps1 -PythonCommand ".\.venv-recon\Scripts\python.exe"
 ```
 
 The verification script runs dependency consistency, mocked pytest tests, Ruff and
-MyPy. It uses `.pytest-atlas-verify` and `.pytest-atlas-cache` rather than older
+MyPy. It uses `.pytest-recon-verify` and `.pytest-recon-cache` rather than older
 potentially locked pytest folders. MyPy/Ruff caches and Python bytecode may reappear.
 No live target requests are required by this test suite. Tests are not a complete
 security audit or a substitute for release/runtime checks.
@@ -31,7 +31,7 @@ separate from the source checkout unless installed in editable mode.
 ## Offline UI demonstration
 
 ```powershell
-.\.venv-atlas\Scripts\python.exe scripts/demo.py --output .pytest-atlas-demo
+.\.venv-recon\Scripts\python.exe scripts/demo.py --output .pytest-recon-demo
 ```
 
 This writes a synthetic example.com SQLite inventory, reports and
@@ -42,7 +42,7 @@ directory for a clean sequence. Do not use a real investigation directory.
 ## Optional live provider smoke test
 
 ```powershell
-.\.venv-atlas\Scripts\python.exe scripts/provider_smoke.py
+.\.venv-recon\Scripts\python.exe scripts/provider_smoke.py
 ```
 
 This makes small Wayback/crt.sh/Cert Spotter requests for example.com and performs
@@ -54,8 +54,8 @@ provider returned an error. It is diagnostic output, not a strict release gate.
 For a bounded live Common Crawl check with saved progress, use a disposable directory:
 
 ```powershell
-.\.venv-atlas\Scripts\python.exe -m src.cli --output-dir .pytest-atlas-cc discover example.com --sources commoncrawl --limit 2 --max-pages 3
-.\.venv-atlas\Scripts\python.exe -m src.cli --output-dir .pytest-atlas-cc runs
+.\.venv-recon\Scripts\python.exe -m src.cli --output-dir .pytest-recon-cc discover example.com --sources commoncrawl --limit 2 --max-pages 3
+.\.venv-recon\Scripts\python.exe -m src.cli --output-dir .pytest-recon-cc runs
 ```
 
 This performs catalog, page-count and one data-page step. Do not use `--strict` as
@@ -65,11 +65,11 @@ a completion gate for this intentionally budget-limited smoke. Check `paused` ve
 ## Build Windows artifacts
 
 ```powershell
-.\scripts\build_windows.ps1 -PythonCommand ".\.venv-atlas\Scripts\python.exe"
+.\scripts\build_windows.ps1 -PythonCommand ".\.venv-recon\Scripts\python.exe"
 ```
 
 The script installs build requirements, builds the EXE with
-`config/dork_searcher.spec`, builds the wheel, and writes SHA-256 sums. It replaces
+`config/wayback_recon.spec`, builds the wheel, and writes SHA-256 sums. It replaces
 same-named current artifacts in ignored `dist/`; preserve a needed release
 before rebuilding. Normal build caches return under `build/`. The spec includes
 the asynchronous DNS backend and applicable SSL runtime policy data without
@@ -79,8 +79,8 @@ byte-for-byte reproducible. There is currently no release-signing step.
 If Windows blocks replacing an existing EXE, do not stop another research session
 or change security settings. Build side-by-side with
 `-OutputDirectory "dist\alternate"`, then test it with
-`python scripts/release_smoke.py --exe dist/alternate/wayback_atlas.exe`.
-Launch that EXE directly: the normal batch launcher prefers `dist/wayback_atlas.exe`
+`python scripts/release_smoke.py --exe dist/alternate/wayback_recon.exe`.
+Launch that EXE directly: the normal batch launcher prefers `dist/wayback_recon.exe`
 and does not automatically select side-by-side builds.
 
 ## Release checklist

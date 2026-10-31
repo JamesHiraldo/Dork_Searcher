@@ -1,24 +1,24 @@
 # Retained parameter-analysis and HTTP/CORS commands
 
 These are separate Python entry points retained for compatibility. They are not
-subcommands of `wayback_atlas.exe` and are not part of the Atlas dashboard.
+subcommands of `wayback_recon.exe` and are not part of the Wayback-Recon dashboard.
 Install from source or wheel and activate that Python environment first; see
 [installation](../README.md#install-from-source). They write the explicit paths supplied by the user,
-not the Atlas Desktop inventory, and do not update `inventory.sqlite3`.
+not the Wayback-Recon Desktop inventory, and do not update `inventory.sqlite3`.
 
 Use only targets you own or have permission to assess. The command-specific scope
-acknowledgement below applies to the retained HTTP probe, not Atlas discovery.
+acknowledgement below applies to the retained HTTP probe, not Wayback-Recon discovery.
 
 ## Wayback parameter analysis
 
-`wayback-recon` uses the shared HTTPS CDX client. It retries transient failures,
+`wayback-parameters` uses the shared HTTPS CDX client. It retries transient failures,
 honors `Retry-After`, paginates with resumption keys, validates that every archived
 URL belongs to the requested scope, and reports truncation and errors explicitly.
 Retry delays are bounded; both seconds and HTTP-date Retry-After values are parsed.
 Pagination state is not saved across process restarts. No target pages are fetched.
 
 ```powershell
-wayback-recon --targets example.com api.example.com `
+wayback-parameters --targets example.com api.example.com `
   --max-urls 100000 --rate 0.5 `
   --output Result\recon.json --csv Result\recon.csv
 ```
@@ -37,7 +37,7 @@ Add `--include-subdomains` when the program scope authorizes child hosts.
 | `--help` | Print usage |
 
 The shared client currently has a 100-page ceiling for this entry point. It does
-not expose the Atlas `--from-date`, `--to-date` or `--max-pages` options.
+not expose the Wayback-Recon `--from-date`, `--to-date` or `--max-pages` options.
 
 The JSON report contains:
 
@@ -86,7 +86,7 @@ The command reports header patterns, not verified browser exploitation. An allow
 origin or wildcard can be intentional; a credentialed wildcard is not automatically
 an exploitable browser policy. Assess actual data sensitivity and browser behavior
 before reporting a finding. This retained command can store raw query parameters;
-do not assume Atlas's archive redaction applies to its output.
+do not assume Wayback-Recon's archive redaction applies to its output.
 
 The two entry points also run as `python -m src.recon_pipeline` and
 `python -m src.passive_probe`. Existing output paths are replaced when reused.

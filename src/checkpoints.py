@@ -107,7 +107,9 @@ class Checkpoints:
         if row is None:
             raise ValueError("Discovery run not found in this output folder; use 'runs'")
         if row["version"] != FORMAT_VERSION:
-            raise ValueError("Unsupported checkpoint version; use the matching Atlas version")
+            raise ValueError(
+                "Unsupported checkpoint version; use the matching Wayback-Recon version"
+            )
         return {**dict(row), "config": json.loads(row["config"])}
 
     def state(self, job_id: str, source: str) -> dict[str, Any]:
@@ -215,7 +217,7 @@ def run_discovery(
     job = checkpoints.job(job_id)
     summaries = []
     with requests.Session() as session:
-        session.headers.update({"User-Agent": "WaybackAtlas/3.2"})
+        session.headers.update({"User-Agent": "Wayback-Recon/4.0"})
         for source in job["config"]["sources"]:
             state = checkpoints.state(job_id, source)
             processed = fetched = new_hosts = 0

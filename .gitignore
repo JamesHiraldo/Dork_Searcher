@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .pytest-tmp/
 .pytest-atlas*/
+.pytest-recon*/
 .mypy_cache/
 .ruff_cache/
 .coverage
@@ -35,6 +36,7 @@ Result/*
 !Result/.gitkeep
 /test
 Wayback_Atlas_Results/
+Wayback_Recon_Results/
 *.sqlite3
 *.sqlite3-wal
 *.sqlite3-shm

@@ -5,10 +5,10 @@
 From CMD in the project folder (prefix the launcher with `.\` in PowerShell):
 
 ```cmd
-wayback_atlas.bat --output-dir "D:\Recon\Example" discover example.com --sources wayback commoncrawl --cc-latest 3 --limit 5000
-wayback_atlas.bat --output-dir "D:\Recon\Example" runs
-wayback_atlas.bat --output-dir "D:\Recon\Example" resume RUN_ID --limit 20000 --max-pages 50
-wayback_atlas.bat --output-dir "D:\Recon\Example" runs --json
+wayback_recon.bat --output-dir "D:\Recon\Example" discover example.com --sources wayback commoncrawl --cc-latest 3 --limit 5000
+wayback_recon.bat --output-dir "D:\Recon\Example" runs
+wayback_recon.bat --output-dir "D:\Recon\Example" resume RUN_ID --limit 20000 --max-pages 50
+wayback_recon.bat --output-dir "D:\Recon\Example" runs --json
 ```
 
 Replace `RUN_ID` with the full ID printed when discovery starts or listed by `runs`.
@@ -132,8 +132,8 @@ retains only the latest 100 audit rows; the database retains the full history.
 - `backup NEW_FILE.sqlite3` includes jobs, buffers and cursors. Export/import is not
   a checkpoint backup. Restore a backup into a new output folder as described in
   [operations](OPERATIONS.md); resume only the intended working copy.
-- These guarantees apply to the main Atlas discover/resume workflow. The retained
-  `wayback-recon` command and direct `collect()` library function remain non-resumable.
+- These guarantees apply to the main Wayback-Recon discover/resume workflow. The retained
+  `wayback-parameters` command and direct `collect()` library function remain non-resumable.
 - Large inventories still require memory for report generation. This release does
   not introduce streaming reports, retention policies, automatic scheduling or leases.
 

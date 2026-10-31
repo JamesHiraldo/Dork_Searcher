@@ -1,4 +1,4 @@
-# Wayback Recon 3.3
+# Wayback-Recon 4.0.1
 
 A terminal workspace for finding historical URLs, collecting subdomains, and tracking
 how their DNS and web availability change over time. Formerly Dork Searcher.
@@ -9,7 +9,18 @@ Use only on assets you own or have permission to assess.
 [Resumable discovery](docs/RESUMABLE_DISCOVERY.md) ·
 [Development](docs/DEVELOPMENT.md)
 
+Repository: [JamesHiraldo/Wayback-Recon](https://github.com/JamesHiraldo/Wayback-Recon).
+See [webpage classification and upgrade notes](docs/WEBPAGE_CLASSIFICATION.md) for
+the corrected alive lists, redirect handling, content limits and legacy data behavior.
+
 ## What changed
+
+- Reports are now saved automatically after menu discovery/import and every completed
+  check/watch round, with the HTML file and containing folder printed on screen.
+- `check --only-unchecked` avoids repeating hosts with any saved check; menu 4 offers
+  the same choice. Use a normal check to revisit failed checks or DNS-only observations.
+- Watch can use `--final-report-only` to reduce disk use. The default preserves a report
+  for each completed round; SQLite always saves individual completed observations.
 
 - A spider ASCII banner, grouped color menus, progress indicators and scriptable commands.
 - Wayback CDX, Common Crawl, crt.sh and Cert Spotter discovery in a persistent SQLite inventory.
@@ -30,23 +41,23 @@ in `dist/`. Release binaries are generated artifacts, not committed source files
 From the project folder in CMD:
 
 ```cmd
-wayback_atlas.bat
+wayback_recon.bat
 ```
 
-In PowerShell use `.\wayback_atlas.bat`. Examples below using `wayback-atlas`
+In PowerShell use `.\wayback_recon.bat`. Examples below using `wayback-recon`
 assume a source/wheel installation with its environment activated. EXE-only users
-can substitute `wayback_atlas.bat` in CMD or `.\wayback_atlas.bat` in PowerShell.
+can substitute `wayback_recon.bat` in CMD or `.\wayback_recon.bat` in PowerShell.
 No Python installation is required to run a built Windows executable.
 
 Or launch the packaged application directly:
 
 ```cmd
-cd /d "C:\path\to\dork_searcher\dist"
-wayback_atlas.exe
+cd /d "C:\path\to\Wayback-Recon\dist"
+wayback_recon.exe
 ```
 
-The old `dork_searcher.bat` forwards to the new launcher. The launcher selects the
-`dist/wayback_atlas.exe` first, then a project Python environment.
+The old `wayback_atlas.bat` forwards to the new launcher. The launcher selects the
+`dist/wayback_recon.exe` first, then a project Python environment.
 
 Unlike the old EXE, the new EXE accepts the same subcommands and flags as the Python CLI.
 
@@ -55,54 +66,71 @@ Unlike the old EXE, the new EXE accepts the same subcommands and flags as the Py
 Python 3.10+:
 
 ```cmd
-python -m venv .venv-atlas
-.venv-atlas\Scripts\activate.bat
+python -m venv .venv-recon
+.venv-recon\Scripts\activate.bat
 python -m pip install -e "."
 python -m src.cli
 ```
 
-On Linux/macOS use `python3 -m venv .venv-atlas`, then
-`source .venv-atlas/bin/activate`. The installed command is `wayback-atlas`.
+On Linux/macOS use `python3 -m venv .venv-recon`, then
+`source .venv-recon/bin/activate`. The installed command is `wayback-recon`.
 Legacy `dork_searcher` and `dork-search` command names invoke the new interface.
 
 ## Menu
 
-| Key | Workflow |
+| Key | What it does |
 | --- | --- |
-| 1 | Discover and merge Wayback + certificate sources + Common Crawl |
-| 2 | Wayback archive, with date range |
-| 3 | Select CT, RapidDNS, CompleteDNS or Common Crawl |
-| 4 | Sample current DNS/HTTP availability |
-| 5 | Watch availability across repeated samples |
-| 6 | Inspect the inventory |
-| 7 | Import discoveries |
-| 8 | Archive dork workbench and saved templates |
-| 9 | Open research resources |
-| 10 | Export the inventory and history |
-| 11 | Local diagnostics and full inventory backup |
-| 12 | List saved discovery runs and resume one |
+| 1 | Find hosts + archived URLs using the default providers; no live checks |
+| 2 | Search Wayback within optional start/end dates |
+| 3 | Search one selected certificate, DNS or archive provider |
+| 4 | Check already-saved hosts once: DNS only or DNS + webpages |
+| 5 | Repeat checks on saved hosts at an interval; does not discover new hosts |
+| 6 | View stored hosts and their latest status; no new requests |
+| 7 | Add hosts/URLs from a file; does not check availability |
+| 8 | Search saved URLs, save dork templates, or open a DuckDuckGo browser link |
+| 9 | Open external research websites; results are not automatically imported |
+| 10 | Save a new HTML/JSON/CSV/TXT report bundle from stored results |
+| 11 | Diagnose the local setup or back up the full SQLite database |
+| 12 | Continue a saved discovery from its checkpoint; not a monitoring job |
 | 0 | Exit |
 
 Type a menu number and press Enter; the prompt no longer repeats the entire choice
 list. Blank input on the main menu does not exit. Source, check-mode and dork menus
 also use numbered choices, explain any Enter default, and offer `0` to go back.
-Wide terminals show two menu columns; narrow windows stack them. The spider uses
+Start with **1 Find hosts → 4 Check hosts → 10 Save reports**. Each option includes
+a short explanation. Options are grouped into discovery, live checks, saved data,
+and maintenance; their existing numbers are unchanged.
+Terminals at least 110 columns wide show two menu columns; narrower windows stack them. The spider uses
 plain ASCII characters for compatibility with older Windows CMD encodings.
 
 Discovery is passive with respect to the target: it queries third-party providers.
 Check/watch sends DNS queries and, unless `--dns-only` is selected, root-page GETs
-to the stored hosts. It reads response headers, closes the stream without collecting
-page bodies, and does not follow redirects. No administrator privileges are needed.
+to the stored hosts, plus two random-name wildcard controls per round. It reads up to
+64 KiB per response and follows at most 10 internal redirects with fresh public-IP
+validation. External redirects are recorded, not followed. No administrator privileges
+are needed. Body samples and redirect URLs can contain sensitive data; keep reports private.
 
 ## Recommended workflow
 
 ```cmd
-wayback-atlas discover example.com
-wayback-atlas check example.com
-wayback-atlas watch example.com --rounds 12 --interval 300
-wayback-atlas inventory example.com
-wayback-atlas export example.com
+wayback-recon discover example.com
+wayback-recon check example.com
+wayback-recon watch example.com --rounds 12 --interval 300
+wayback-recon inventory example.com
+wayback-recon export example.com
 ```
+
+For large inventories: `wayback-recon check example.com --only-unchecked` skips hosts
+with **any** prior check, including failed or DNS-only checks. It does not retry failures
+or resume a partially completed host request; use a regular check for those.
+When no hosts remain, it sends no requests. This selection is not available for watch,
+which must repeat checks to observe changes.
+
+Watch exports full snapshots after each completed round. For long runs use
+`wayback-recon watch example.com --rounds 100 --final-report-only` to export only after
+the final round. If interrupted before then, completed checks remain in SQLite; run
+`export example.com` to create a report. Monitor report folders can grow large; retain
+or archive snapshots according to your research needs.
 
 Repeat discovery later against the same output folder to find newly observed names.
 Each `discover` creates a fresh run. To continue an interrupted/limited run instead,
@@ -118,7 +146,7 @@ round, not an exact wall-clock schedule. Nothing is silently scheduled or instal
 ## Commands and flags
 
 ```text
-wayback-atlas [--output-dir PATH] COMMAND
+wayback-recon [--output-dir PATH] COMMAND
 ```
 
 Place the global `--output-dir` option before the command. Run without a command
@@ -146,7 +174,7 @@ for the dashboard. Every command supports `--help`.
 | doctor | Local runtime/TLS/DNS/database checks; no network requests or key disclosure |
 | backup DESTINATION | Consistent full SQLite backup to a new file; never overwrites |
 
-`wayback-atlas --version` prints the running application's version.
+`wayback-recon --version` prints the running application's version.
 
 Concurrency is 1–50, timeout is greater than zero and at most 60 seconds,
 watch rounds are 1–10000 and the interval is 10–86400 seconds. `--host-timeout`
@@ -162,19 +190,19 @@ explicit source error; narrow the query or use a suitable alternative source.
 Common Crawl catalog/page-count steps also consume `--max-pages`; crt.sh/CompleteDNS
 are single-response sources with a durable local buffer, not remotely paginated APIs.
 `--timeout` applies to individual
-DNS/HTTP operations, not the entire job. There is no Atlas requests-per-second flag.
+DNS/HTTP operations, not the entire job. There is no Wayback-Recon requests-per-second flag.
 Date strings accept 4, 6, 8, 10, 12 or 14 digits and are calendar-validated.
 
 Examples:
 
 ```cmd
-wayback-atlas --output-dir "D:\Recon\Example" discover example.com --sources wayback --from-date 2005 --to-date 2015 --limit 20000 --max-pages 50
-wayback-atlas --output-dir "D:\Recon\Example" discover example.com --sources crtsh certspotter
-wayback-atlas --output-dir "D:\Recon\Example" discover example.com --sources commoncrawl --cc-latest 3 --limit 5000
-wayback-atlas --output-dir "D:\Recon\Example" runs
-wayback-atlas --output-dir "D:\Recon\Example" resume RUN_ID --limit 20000 --max-pages 50
-wayback-atlas --output-dir "D:\Recon\Example" import example.com hosts.csv
-wayback-atlas --output-dir "D:\Recon\Example" watch example.com --dns-only --rounds 10 --interval 60
+wayback-recon --output-dir "D:\Recon\Example" discover example.com --sources wayback --from-date 2005 --to-date 2015 --limit 20000 --max-pages 50
+wayback-recon --output-dir "D:\Recon\Example" discover example.com --sources crtsh certspotter
+wayback-recon --output-dir "D:\Recon\Example" discover example.com --sources commoncrawl --cc-latest 3 --limit 5000
+wayback-recon --output-dir "D:\Recon\Example" runs
+wayback-recon --output-dir "D:\Recon\Example" resume RUN_ID --limit 20000 --max-pages 50
+wayback-recon --output-dir "D:\Recon\Example" import example.com hosts.csv
+wayback-recon --output-dir "D:\Recon\Example" watch example.com --dns-only --rounds 10 --interval 60
 ```
 
 Unrelated domains from provider data and imports are excluded structurally; a result
@@ -202,7 +230,7 @@ Credentials are read from environment variables and are not saved to reports:
 ```cmd
 set RAPIDDNS_API_KEY=your-key
 set COMPLETEDNS_API_KEY=your-key
-wayback-atlas discover example.com --sources rapiddns completedns
+wayback-recon discover example.com --sources rapiddns completedns
 ```
 
 Keys may consume your provider quota when you explicitly select that source.
@@ -225,10 +253,10 @@ Recommendation: use **local archive filtering** as the reliable automated path.
 It has no search-engine CAPTCHA or API quota once URLs are collected:
 
 ```cmd
-wayback-atlas dorks example.com "ext:js"
-wayback-atlas dorks example.com "path:/api/ -ext:png"
-wayback-atlas dorks example.com "param:redirect OR param:url"
-wayback-atlas dorks example.com "host:dev.example.com"
+wayback-recon dorks example.com "ext:js"
+wayback-recon dorks example.com "path:/api/ -ext:png"
+wayback-recon dorks example.com "param:redirect OR param:url"
+wayback-recon dorks example.com "host:dev.example.com"
 ```
 
 Terms separated by spaces are ANDed; `OR` joins groups; `-term` excludes matches.
@@ -251,7 +279,13 @@ into DuckDuckGo operators. Use plain keywords in browser mode when uncertain.
 | First/last seen | When this inventory first/last collected the name, not when it was created/deleted |
 | Archived evidence | A URL was present in the selected CDX sample; historical status is not current status |
 | unchecked | Discovered, but no availability sample yet |
-| online | An HTTP response arrived; 401, 403, 404 and 500 still prove a responding service |
+| confirmed_webpage | 2xx with meaningful HTML and no detected error-page signals; eligible for alive.txt |
+| alive_candidate | 2xx without sufficient content evidence, including JSON/API responses |
+| forbidden / authentication_required | 403 / 401: reachable, but excluded from alive.txt |
+| bad_request / not_found / server_error | HTTP errors retained separately, never confirmed webpages |
+| redirect / external_redirect / redirect_loop | Redirect evidence; external destinations are not contacted |
+| error_page / wildcard_candidate | Denial content or matching generic wildcard response; excluded from alive.txt |
+| online | Legacy transport state only; never use this field to determine webpage accessibility |
 | tls_error | A TLS certificate validation failure indicates a responding TLS endpoint |
 | dns_only | DNS resolves, but HTTP was not requested |
 | nxdomain | The resolver returned NXDOMAIN at sampling time |
@@ -274,11 +308,13 @@ DNS resolution or a takeover vulnerability.
 
 ## Output and recovery
 
-Default: `Desktop\Wayback_Atlas_Results`, using the real Windows Desktop location.
-Automatic fallback: `%LOCALAPPDATA%\WaybackAtlas\Results`, then the home directory.
+New installations default to `Desktop\Wayback_Recon_Results`, using the real Windows
+Desktop location. An existing `Desktop\Wayback_Atlas_Results\inventory.sqlite3` is
+reused in place to preserve history. Automatic fallback is `%LOCALAPPDATA%\WaybackRecon\Results`,
+then `~/Wayback_Recon_Results`.
 
-Set `WAYBACK_ATLAS_OUTPUT_DIR` or pass `--output-dir` to use a fixed project folder.
-The previous `DORK_SEARCHER_OUTPUT_DIR` variable remains recognized. An explicit
+Set `WAYBACK_RECON_OUTPUT_DIR` or pass `--output-dir` to use a fixed project folder.
+The previous `WAYBACK_ATLAS_OUTPUT_DIR` and `DORK_SEARCHER_OUTPUT_DIR` remain recognized. An explicit
 unwritable path gives an error rather than silently selecting a different database.
 
 Files include:
@@ -288,6 +324,8 @@ Files include:
 - `reports/DOMAIN/TIMESTAMP_ID/report.html`: readable offline report; open it in a browser.
 - `reports/DOMAIN/TIMESTAMP_ID/inventory.csv`: flat inventory with spreadsheet formula protection.
 - The same snapshot folder contains `hosts.txt`, `alive.txt`, `down_observed.txt` and `intermittent.txt`.
+- `alive.txt` equals `confirmed_webpages.txt`; protected, forbidden, redirects, errors,
+  candidates, timeouts and TLS failures have separate lists. See the classification guide.
 - `archive_matches.json`: latest local query results (replaced by the next local query).
 - `custom_dorks.txt`: saved templates.
 
@@ -314,7 +352,7 @@ Reports can still contain private research context: keep output folders out of G
 Opaque provider cursors can contain unredacted URL information; protect the database
 and backups even when exported evidence URLs are redacted. API keys are not checkpointed.
 Existing Dork Searcher results can be imported; nothing is automatically deleted.
-Importing an Atlas JSON report imports host records, not the complete database
+Importing an Wayback-Recon JSON report imports host records, not the complete database
 history. It is not a backup restore. See [import formats and backup procedure](docs/OPERATIONS.md).
 Use `backup NEW_FILE.sqlite3` (or menu 11) for a consistent database snapshot,
 including full evidence and check history. Copy custom templates separately.
@@ -334,19 +372,19 @@ Custom output directories are not automatically covered by this repository's
 6. Add scheduled report comparisons and notifications only after baselining expected
    maintenance, wildcard behavior and rate limits.
 
-This is a tested 3.3 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
+This is a tested 4.0 beta, not a claim of exhaustive discovery or guaranteed provider uptime.
 Development priorities remain unique-host budgets, stronger monitoring context,
 streaming exports and full archive timelines.
 
 ## Development and packaging
 
 ```powershell
-.\.venv-atlas\Scripts\python.exe -m pip install -e ".[dev,build]"
-.\scripts\verify.ps1 -PythonCommand ".\.venv-atlas\Scripts\python.exe"
-.\scripts\build_windows.ps1 -PythonCommand ".\.venv-atlas\Scripts\python.exe"
+.\.venv-recon\Scripts\python.exe -m pip install -e ".[dev,build]"
+.\scripts\verify.ps1 -PythonCommand ".\.venv-recon\Scripts\python.exe"
+.\scripts\build_windows.ps1 -PythonCommand ".\.venv-recon\Scripts\python.exe"
 ```
 
-The build emits `dist\wayback_atlas.exe` and a versioned Python wheel.
+The build emits `dist\wayback_recon.exe` and a versioned Python wheel.
 It also writes `SHA256SUMS.txt`. The launcher prefers the EXE even after source edits;
 run `python -m src.cli` to test source changes, then rebuild for distribution.
 No browser engine or packet-injection driver is bundled.
@@ -357,7 +395,7 @@ local documentation links and flags a few common credential signatures. It is no
 a comprehensive secret scan and does not inspect Git history. Review history before
 making an existing repository public; do not upload the entire working folder as a ZIP.
 
-The older parameter-analysis command `wayback-recon` and HTTP-header command
+The older parameter-analysis command is now `wayback-parameters`; the HTTP-header command
 `http-metadata-probe` remain available for compatibility; see their `--help`.
 They are no longer the main menu.
 Their separate flags and output paths are documented in [retained commands](docs/README_RECON.md).

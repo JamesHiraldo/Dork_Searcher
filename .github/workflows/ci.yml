@@ -68,7 +68,7 @@ jobs:
         with:
           name: windows-release
           path: |
-            dist/wayback_atlas.exe
-            dist/wayback_atlas-3.3.0-py3-none-any.whl
+            dist/wayback_recon.exe
+            dist/wayback_recon-4.0.1-py3-none-any.whl
             dist/SHA256SUMS.txt
 

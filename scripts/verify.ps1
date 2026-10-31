@@ -13,7 +13,7 @@ function Invoke-Checked {
 }
 
 Invoke-Checked @("-m", "pip", "check")
-Invoke-Checked @("-m", "pytest", "-q", "--basetemp=.pytest-atlas-verify", "-o", "cache_dir=.pytest-atlas-cache")
+Invoke-Checked @("-m", "pytest", "-q", "--basetemp=.pytest-recon-verify", "-o", "cache_dir=.pytest-recon-cache")
 Invoke-Checked @("-m", "ruff", "check", "src", "tests")
 Invoke-Checked @("-m", "mypy", "src")
 

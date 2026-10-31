@@ -26,9 +26,9 @@ def atomic_write_text(path: str, content: str) -> None:
             suffix=".tmp",
             delete=False,
         ) as temporary:
+            temporary_name = temporary.name
             temporary.write(content)
             temporary.flush()
-            temporary_name = temporary.name
         os.replace(temporary_name, destination)
     finally:
         if temporary_name and os.path.exists(temporary_name):

@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from src.classification import EXPORT_STATES
 from src.discovery import DiscoveryResult
 from src.inventory import Inventory, availability_trend
 
@@ -84,6 +85,7 @@ def test_export_bundles_are_isolated_and_database_unchanged(tmp_path):
             "intermittent.txt",
             "down_observed.txt",
         }
+        expected.update(f"{label}.txt" for label in EXPORT_STATES)
         assert {p.name for p in first.parent.iterdir()} == expected
         assert {p.name for p in second.parent.iterdir()} == expected
         assert (first.parent / "hosts.txt").read_text().strip() == "api.example.com"
